@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Видеозвонок</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="call-container">
+        <header class="call-header">
+            <h1>Видеозвонок</h1>
+            <div class="room-info">
+                <span>Комната: <span id="currentRoomId"></span></span>
+            </div>
+        </header>
+
+        <main class="call-main">
+            <div class="video-container">
+                <video id="localVideo" autoplay muted playsinline></video>
+                <div id="remoteVideos"></div>
+            </div>
+
+            <div class="controls">
+                <button id="toggleVideo" class="control-btn video-on">
+                    📹
+                </button>
+                <button id="toggleAudio" class="control-btn audio-on">
+                    🎤
+                </button>
+                <button id="shareScreen" class="control-btn">
+                    🖥️
+                </button>
+                <button id="copyRoomLink" class="control-btn">
+                    🔗
+                </button>
+                <button id="endCall" class="control-btn end-call">
+                    📞
+                </button>
+            </div>
+        </main>
+
+        <div id="participants">
+            <h3>Участники (<span id="participantCount">1</span>)</h3>
+            <div id="participantList">
+                <div class="participant">Вы</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification hidden"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="call.js"></script>
+</body>
+</html>

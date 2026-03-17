@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Видеозвонки</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 Видеозвонки</h1>
+            <p>Создайте комнату для видеозвонка или присоединитесь к существующей</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Создать новый звонок</h2>
+                <button id="createRoom" class="btn btn-primary">
+                    📞 Создать комнату
+                </button>
+            </div>
+
+            <div class="card">
+                <h2>Присоединиться к звонку</h2>
+                <div class="input-group">
+                    <input type="text" id="roomInput" placeholder="Введите ID комнаты">
+                    <button id="joinRoom" class="btn btn-secondary">
+                        🚪 Войти
+                    </button>
+                </div>
+            </div>
+
+            <div id="roomInfo" class="card hidden">
+                <h2>Ваша комната создана!</h2>
+                <div class="room-details">
+                    <p><strong>ID комнаты:</strong> <span id="roomId"></span></p>
+                    <p><strong>Ссылка для приглашения:</strong></p>
+                    <div class="link-container">
+                        <input type="text" id="roomLink" readonly>
+                        <button id="copyLink" class="btn btn-copy">📋 Копировать</button>
+                    </div>
+                </div>
+                <button id="startCall" class="btn btn-primary">
+                    🎥 Начать звонок
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
