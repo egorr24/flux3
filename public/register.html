@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Регистрация - Видеозвонки</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { 
+            background: white; 
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 { 
+            text-align: center; 
+            margin-bottom: 2rem; 
+            color: #333; 
+            font-size: 2rem;
+        }
+        .form-group { 
+            margin-bottom: 1rem; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 0.5rem; 
+            color: #555; 
+            font-weight: 500;
+        }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        input:focus { 
+            outline: none; 
+            border-color: #667eea; 
+        }
+        input.invalid { 
+            border-color: #dc3545; 
+        }
+        button { 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1rem;
+            width: 100%;
+            margin-bottom: 1rem;
+            transition: background 0.3s;
+        }
+        button:hover { background: #5a6fd8; }
+        button:disabled { 
+            background: #ccc; 
+            cursor: not-allowed; 
+        }
+        .error { 
+            background: #f8d7da; 
+            color: #721c24; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .success { 
+            background: #d4edda; 
+            color: #155724; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .link { 
+            text-align: center; 
+            margin-top: 1rem; 
+        }
+        .link a { 
+            color: #667eea; 
+            text-decoration: none; 
+        }
+        .link a:hover { 
+            text-decoration: underline; 
+        }
+        .password-strength { 
+            font-size: 0.8rem; 
+            margin-top: 0.25rem;
+            color: #666;
+        }
+        .strength-weak { color: #dc3545; }
+        .strength-medium { color: #ffc107; }
+        .strength-strong { color: #28a745; }
+        .loading { 
+            display: none; 
+            text-align: center; 
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Регистрация</h1>
+        
+        <div id="error" class="error"></div>
+        <div id="success" class="success"></div>
+        
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="username">Имя пользователя:</label>
+                <input type="text" id="username" name="username" required minlength="3" maxlength="20">
+                <div class="password-strength" id="usernameHelp">От 3 до 20 символов</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Пароль:</label>
+                <input type="password" id="password" name="password" required minlength="6">
+                <div class="password-strength" id="passwordStrength">Минимум 6 символов</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="confirmPassword">Подтвердите пароль:</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" required>
+                <div class="password-strength" id="confirmHelp"></div>
+            </div>
+            
+            <button type="submit" id="submitBtn">Зарегистрироваться</button>
+        </form>
+        
+        <div class="loading" id="loading">Создание аккаунта...</div>
+        
+        <div class="link">
+            <p>Уже есть аккаунт? <a href="/login">Войти</a></p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('registerForm');
+        const errorDiv = document.getElementById('error');
+        const successDiv = document.getElementById('success');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const passwordStrength = document.getElementById('passwordStrength');
+        const confirmHelp = document.getElementById('confirmHelp');
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            successDiv.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+        }
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Регистрация...';
+                loading.style.display = 'block';
+                form.style.display = 'none';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Зарегистрироваться';
+                loading.style.display = 'none';
+                form.style.display = 'block';
+            }
+        }
+
+        function checkPasswordStrength(password) {
+            if (password.length < 6) {
+                passwordStrength.textContent = 'Слишком короткий пароль';
+                passwordStrength.className = 'password-strength strength-weak';
+                return false;
+            } else if (password.length < 8) {
+                passwordStrength.textContent = 'Слабый пароль';
+                passwordStrength.className = 'password-strength strength-weak';
+                return true;
+            } else if (password.length < 12) {
+                passwordStrength.textContent = 'Средний пароль';
+                passwordStrength.className = 'password-strength strength-medium';
+                return true;
+            } else {
+                passwordStrength.textContent = 'Сильный пароль';
+                passwordStrength.className = 'password-strength strength-strong';
+                return true;
+            }
+        }
+
+        function checkPasswordMatch() {
+            const password = passwordInput.value;
+            const confirmPassword = confirmPasswordInput.value;
+            
+            if (confirmPassword === '') {
+                confirmHelp.textContent = '';
+                confirmPasswordInput.classList.remove('invalid');
+                return true;
+            }
+            
+            if (password === confirmPassword) {
+                confirmHelp.textContent = 'Пароли совпадают';
+                confirmHelp.className = 'password-strength strength-strong';
+                confirmPasswordInput.classList.remove('invalid');
+                return true;
+            } else {
+                confirmHelp.textContent = 'Пароли не совпадают';
+                confirmHelp.className = 'password-strength strength-weak';
+                confirmPasswordInput.classList.add('invalid');
+                return false;
+            }
+        }
+
+        passwordInput.addEventListener('input', () => {
+            checkPasswordStrength(passwordInput.value);
+            checkPasswordMatch();
+        });
+
+        confirmPasswordInput.addEventListener('input', checkPasswordMatch);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+
+            const formData = new FormData(form);
+            const data = {
+                username: formData.get('username'),
+                email: formData.get('email'),
+                password: formData.get('password'),
+                confirmPassword: formData.get('confirmPassword')
+            };
+
+            // Валидация на клиенте
+            if (data.password !== data.confirmPassword) {
+                showError('Пароли не совпадают');
+                return;
+            }
+
+            if (data.password.length < 6) {
+                showError('Пароль должен содержать минимум 6 символов');
+                return;
+            }
+
+            if (data.username.length < 3) {
+                showError('Имя пользователя должно содержать минимум 3 символа');
+                return;
+            }
+
+            setLoading(true);
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showSuccess('Регистрация успешна! Перенаправление...');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    setLoading(false);
+                    showError(result.error || 'Ошибка регистрации');
+                }
+            } catch (error) {
+                setLoading(false);
+                showError('Ошибка сети. Попробуйте еще раз.');
+            }
+        });
+
+        // Автофокус на первое поле
+        document.getElementById('username').focus();
+    </script>
+</body>
+</html>

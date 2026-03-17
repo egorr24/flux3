@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход - Видеозвонки</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { 
+            background: white; 
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 { 
+            text-align: center; 
+            margin-bottom: 2rem; 
+            color: #333; 
+            font-size: 2rem;
+        }
+        .form-group { 
+            margin-bottom: 1rem; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 0.5rem; 
+            color: #555; 
+            font-weight: 500;
+        }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        input:focus { 
+            outline: none; 
+            border-color: #667eea; 
+        }
+        button { 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1rem;
+            width: 100%;
+            margin-bottom: 1rem;
+            transition: background 0.3s;
+        }
+        button:hover { background: #5a6fd8; }
+        button:disabled { 
+            background: #ccc; 
+            cursor: not-allowed; 
+        }
+        .error { 
+            background: #f8d7da; 
+            color: #721c24; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .success { 
+            background: #d4edda; 
+            color: #155724; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .link { 
+            text-align: center; 
+            margin-top: 1rem; 
+        }
+        .link a { 
+            color: #667eea; 
+            text-decoration: none; 
+        }
+        .link a:hover { 
+            text-decoration: underline; 
+        }
+        .loading { 
+            display: none; 
+            text-align: center; 
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Вход</h1>
+        
+        <div id="error" class="error"></div>
+        <div id="success" class="success"></div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Пароль:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" id="submitBtn">Войти</button>
+        </form>
+        
+        <div class="loading" id="loading">Вход в систему...</div>
+        
+        <div class="link">
+            <p>Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorDiv = document.getElementById('error');
+        const successDiv = document.getElementById('success');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            successDiv.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+        }
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Вход...';
+                loading.style.display = 'block';
+                form.style.display = 'none';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Войти';
+                loading.style.display = 'none';
+                form.style.display = 'block';
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            setLoading(true);
+
+            const formData = new FormData(form);
+            const data = {
+                email: formData.get('email'),
+                password: formData.get('password')
+            };
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showSuccess('Вход выполнен успешно! Перенаправление...');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    setLoading(false);
+                    showError(result.error || 'Ошибка входа');
+                }
+            } catch (error) {
+                setLoading(false);
+                showError('Ошибка сети. Попробуйте еще раз.');
+            }
+        });
+
+        // Автофокус на первое поле
+        document.getElementById('email').focus();
+    </script>
+</body>
+</html>

@@ -20,6 +20,24 @@
             justify-content: space-between; 
             align-items: center;
         }
+        .user-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .logout-btn:hover {
+            background: #c82333;
+        }
         .video-container { 
             position: relative; 
             height: calc(100vh - 140px); 
@@ -85,8 +103,14 @@
 </head>
 <body>
     <div class="header">
-        <h1>Видеозвонок</h1>
-        <span>Комната: <span id="roomId"></span></span>
+        <div>
+            <h1>Видеозвонок</h1>
+            <span>Комната: <span id="roomId"></span></span>
+        </div>
+        <div class="user-controls">
+            <span id="currentUser"></span>
+            <button onclick="logout()" class="logout-btn">Выйти</button>
+        </div>
     </div>
 
     <div class="video-container">
@@ -130,6 +154,17 @@
         // Инициализация
         async function init() {
             try {
+                // Загружаем информацию о пользователе
+                const userResponse = await fetch('/api/user');
+                const user = await userResponse.json();
+                
+                if (user.isAuthenticated) {
+                    document.getElementById('currentUser').textContent = user.username;
+                } else {
+                    window.location.href = '/login';
+                    return;
+                }
+
                 // Получаем доступ к камере и микрофону
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: true,
@@ -152,6 +187,17 @@
             } catch (error) {
                 console.error('Ошибка:', error);
                 showNotification('Ошибка доступа к камере/микрофону', 'error');
+            }
+        }
+
+        // Выход из системы
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (error) {
+                console.error('Ошибка выхода:', error);
+                window.location.href = '/login';
             }
         }
 

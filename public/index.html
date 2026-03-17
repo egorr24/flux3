@@ -22,7 +22,39 @@
             max-width: 500px;
             width: 90%;
         }
-        h1 { text-align: center; margin-bottom: 2rem; color: #333; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            width: auto;
+            margin-bottom: 0;
+        }
+        .logout-btn:hover {
+            background: #c82333;
+        }
+        h1 { 
+            color: #333; 
+            margin: 0;
+        }
         .card { margin-bottom: 1.5rem; }
         .card h2 { margin-bottom: 1rem; color: #555; font-size: 1.2rem; }
         button { 
@@ -59,7 +91,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎥 Видеозвонки</h1>
+        <div class="header">
+            <h1>🎥 Видеозвонки</h1>
+            <div class="user-info">
+                <span>Привет, <span id="username"></span>!</span>
+                <button onclick="logout()" class="logout-btn">Выйти</button>
+            </div>
+        </div>
         
         <div class="card">
             <h2>Создать новый звонок</h2>
@@ -85,19 +123,64 @@
     </div>
 
     <script>
+        let currentUser = null;
+
+        // Загружаем информацию о пользователе
+        async function loadUserInfo() {
+            try {
+                const response = await fetch('/api/user');
+                const user = await response.json();
+                
+                if (user.isAuthenticated) {
+                    currentUser = user;
+                    document.getElementById('username').textContent = user.username;
+                } else {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки пользователя:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        // Выход из системы
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (error) {
+                console.error('Ошибка выхода:', error);
+                window.location.href = '/login';
+            }
+        }
+
         function generateRoomId() {
             return Math.random().toString(36).substring(2, 15);
         }
 
         function createRoom() {
-            const roomId = generateRoomId();
-            const roomLink = window.location.origin + '/call/' + roomId;
-            
-            document.getElementById('roomId').textContent = roomId;
-            document.getElementById('roomLink').value = roomLink;
-            document.getElementById('roomInfo').style.display = 'block';
-            
-            localStorage.setItem('currentRoomId', roomId);
+            fetch('/api/create-room', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('roomId').textContent = data.roomId;
+                    document.getElementById('roomLink').value = data.roomLink;
+                    document.getElementById('roomInfo').style.display = 'block';
+                    
+                    localStorage.setItem('currentRoomId', data.roomId);
+                } else {
+                    alert('Ошибка создания комнаты: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                alert('Ошибка создания комнаты');
+            });
         }
 
         function joinRoom() {
@@ -128,6 +211,9 @@
                 joinRoom();
             }
         });
+
+        // Загружаем информацию о пользователе при загрузке страницы
+        loadUserInfo();
     </script>
 </body>
 </html>
