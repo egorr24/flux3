@@ -154,15 +154,22 @@
         // Инициализация
         async function init() {
             try {
-                // Загружаем информацию о пользователе
-                const userResponse = await fetch('/api/user');
-                const user = await userResponse.json();
-                
-                if (user.isAuthenticated) {
-                    document.getElementById('currentUser').textContent = user.username;
-                } else {
-                    window.location.href = '/login';
-                    return;
+                // Загружаем информацию о пользователе (опционально)
+                try {
+                    const userResponse = await fetch('/api/user');
+                    const user = await userResponse.json();
+                    
+                    if (user.isAuthenticated) {
+                        document.getElementById('currentUser').textContent = user.username;
+                        document.querySelector('.user-controls').style.display = 'flex';
+                    } else {
+                        document.getElementById('currentUser').textContent = 'Гость';
+                        document.querySelector('.user-controls').style.display = 'none';
+                    }
+                } catch (error) {
+                    console.log('Работаем в демо режиме');
+                    document.getElementById('currentUser').textContent = 'Демо';
+                    document.querySelector('.user-controls').style.display = 'none';
                 }
 
                 // Получаем доступ к камере и микрофону

@@ -134,12 +134,21 @@
                 if (user.isAuthenticated) {
                     currentUser = user;
                     document.getElementById('username').textContent = user.username;
+                    document.querySelector('.user-info').style.display = 'flex';
                 } else {
-                    window.location.href = '/login';
+                    // Работаем в демо режиме без авторизации
+                    document.querySelector('.user-info').style.display = 'none';
+                    document.querySelector('.header h1').textContent = '🎥 Видеозвонки (Демо)';
+                    
+                    if (user.error) {
+                        console.log('Демо режим:', user.error);
+                    }
                 }
             } catch (error) {
                 console.error('Ошибка загрузки пользователя:', error);
-                window.location.href = '/login';
+                // Продолжаем работу в демо режиме
+                document.querySelector('.user-info').style.display = 'none';
+                document.querySelector('.header h1').textContent = '🎥 Видеозвонки (Демо)';
             }
         }
 
@@ -174,13 +183,34 @@
                     
                     localStorage.setItem('currentRoomId', data.roomId);
                 } else {
-                    alert('Ошибка создания комнаты: ' + (data.error || 'Неизвестная ошибка'));
+                    // Fallback для демо режима
+                    const roomId = generateRoomId();
+                    const roomLink = window.location.origin + '/call/' + roomId;
+                    
+                    document.getElementById('roomId').textContent = roomId;
+                    document.getElementById('roomLink').value = roomLink;
+                    document.getElementById('roomInfo').style.display = 'block';
+                    
+                    localStorage.setItem('currentRoomId', roomId);
                 }
             })
             .catch(error => {
-                console.error('Ошибка:', error);
-                alert('Ошибка создания комнаты');
+                console.error('Ошибка API, используем локальную генерацию:', error);
+                
+                // Fallback для демо режима
+                const roomId = generateRoomId();
+                const roomLink = window.location.origin + '/call/' + roomId;
+                
+                document.getElementById('roomId').textContent = roomId;
+                document.getElementById('roomLink').value = roomLink;
+                document.getElementById('roomInfo').style.display = 'block';
+                
+                localStorage.setItem('currentRoomId', roomId);
             });
+        }
+
+        function generateRoomId() {
+            return Math.random().toString(36).substring(2, 15);
         }
 
         function joinRoom() {

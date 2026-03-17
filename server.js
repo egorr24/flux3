@@ -13,16 +13,43 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Настройка PostgreSQL
+// Настройка PostgreSQL с обработкой ошибок
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/videocalls',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Настройки для стабильности соединения
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-// Инициализация базы данных
+// Проверка подключения к базе данных
+async function testDatabaseConnection() {
+  try {
+    const client = await pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+    console.log('✅ Подключение к PostgreSQL успешно');
+    return true;
+  } catch (error) {
+    console.error('❌ Ошибка подключения к PostgreSQL:', error.message);
+    return false;
+  }
+}
+
+// Инициализация базы данных с обработкой ошибок
 async function initDatabase() {
   try {
-    // Создаем таблицу пользователей
+    console.log('🔄 Инициализация базы данных...');
+    
+    // Проверяем подключение
+    const isConnected = await testDatabaseConnection();
+    if (!isConnected) {
+      console.log('⚠️  База данных недоступна, запускаем без БД (только для разработки)');
+      return false;
+    }
+
+    // Создаем таблицы
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -34,7 +61,6 @@ async function initDatabase() {
       )
     `);
 
-    // Создаем таблицу сессий
     await pool.query(`
       CREATE TABLE IF NOT EXISTS session (
         sid VARCHAR NOT NULL COLLATE "default",
@@ -49,7 +75,6 @@ async function initDatabase() {
       CREATE INDEX IF NOT EXISTS IDX_session_expire ON session(expire);
     `);
 
-    // Создаем таблицу комнат (для истории)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS rooms (
         id SERIAL PRIMARY KEY,
@@ -60,10 +85,12 @@ async function initDatabase() {
       )
     `);
 
-    console.log('База данных инициализирована успешно');
+    console.log('✅ База данных инициализирована успешно');
+    return true;
   } catch (error) {
-    console.error('Ошибка инициализации базы данных:', error);
-    process.exit(1);
+    console.error('❌ Ошибка инициализации базы данных:', error.message);
+    console.log('⚠️  Запускаем без БД (только для разработки)');
+    return false;
   }
 }
 
@@ -71,20 +98,11 @@ async function initDatabase() {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Настройка сессий с PostgreSQL
-app.use(session({
-  store: new pgSession({
-    pool: pool,
-    tableName: 'session'
-  }),
-  secret: process.env.SESSION_SECRET || 'video-call-secret-key-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 часа
-  }
-}));
+// Глобальная переменная для отслеживания состояния БД
+let isDatabaseConnected = false;
+
+// Настройка сессий (будет настроено после проверки БД)
+let sessionMiddleware;
 
 // Хранилище активных комнат (в памяти для WebRTC)
 const activeRooms = {};
@@ -103,6 +121,10 @@ function requireAuth(req, res, next) {
 
 // Функции для работы с пользователями
 async function createUser(username, email, password) {
+  if (!isDatabaseConnected) {
+    throw new Error('База данных недоступна');
+  }
+  
   const hashedPassword = await bcrypt.hash(password, 10);
   
   const result = await pool.query(
@@ -114,6 +136,10 @@ async function createUser(username, email, password) {
 }
 
 async function findUserByEmail(email) {
+  if (!isDatabaseConnected) {
+    throw new Error('База данных недоступна');
+  }
+  
   const result = await pool.query(
     'SELECT id, username, email, password_hash, created_at FROM users WHERE email = $1',
     [email]
@@ -123,6 +149,10 @@ async function findUserByEmail(email) {
 }
 
 async function findUserById(id) {
+  if (!isDatabaseConnected) {
+    throw new Error('База данных недоступна');
+  }
+  
   const result = await pool.query(
     'SELECT id, username, email, created_at FROM users WHERE id = $1',
     [id]
@@ -132,6 +162,10 @@ async function findUserById(id) {
 }
 
 async function checkUserExists(username, email) {
+  if (!isDatabaseConnected) {
+    throw new Error('База данных недоступна');
+  }
+  
   const result = await pool.query(
     'SELECT id FROM users WHERE username = $1 OR email = $2',
     [username, email]
@@ -141,6 +175,11 @@ async function checkUserExists(username, email) {
 }
 
 async function createRoom(roomId, userId) {
+  if (!isDatabaseConnected) {
+    console.log('База данных недоступна, пропускаем сохранение комнаты');
+    return;
+  }
+  
   try {
     await pool.query(
       'INSERT INTO rooms (room_id, created_by) VALUES ($1, $2)',
@@ -156,6 +195,10 @@ app.post('/api/register', async (req, res) => {
   const { username, email, password } = req.body;
   
   try {
+    if (!isDatabaseConnected) {
+      return res.status(503).json({ error: 'Сервис временно недоступен. База данных не подключена.' });
+    }
+    
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Все поля обязательны' });
     }
@@ -193,6 +236,10 @@ app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   
   try {
+    if (!isDatabaseConnected) {
+      return res.status(503).json({ error: 'Сервис временно недоступен. База данных не подключена.' });
+    }
+    
     if (!email || !password) {
       return res.status(400).json({ error: 'Email и пароль обязательны' });
     }
@@ -233,6 +280,10 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/user', async (req, res) => {
   try {
+    if (!isDatabaseConnected) {
+      return res.json({ isAuthenticated: false, error: 'База данных недоступна' });
+    }
+    
     if (req.session.userId) {
       const user = await findUserById(req.session.userId);
       if (user) {
@@ -251,15 +302,21 @@ app.get('/api/user', async (req, res) => {
     }
   } catch (error) {
     console.error('Ошибка получения пользователя:', error);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    res.json({ isAuthenticated: false, error: 'Ошибка сервера' });
   }
 });
 
-// API для создания комнаты
-app.post('/api/create-room', requireAuth, async (req, res) => {
+// API для создания комнаты (работает и без БД)
+app.post('/api/create-room', (req, res) => {
   try {
     const roomId = Math.random().toString(36).substring(2, 15);
-    await createRoom(roomId, req.session.userId);
+    
+    // Сохраняем в БД если доступна
+    if (isDatabaseConnected && req.session.userId) {
+      createRoom(roomId, req.session.userId).catch(err => 
+        console.error('Ошибка сохранения комнаты:', err)
+      );
+    }
     
     res.json({ 
       success: true, 
@@ -272,27 +329,61 @@ app.post('/api/create-room', requireAuth, async (req, res) => {
   }
 });
 
-// HTML маршруты
+// Healthcheck endpoint для Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    database: isDatabaseConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString() 
+  });
+});
+
+// HTML маршруты (работают и без БД для демо)
 app.get('/login', (req, res) => {
-  if (req.session.userId) {
+  if (req.session && req.session.userId) {
     return res.redirect('/');
   }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 app.get('/register', (req, res) => {
-  if (req.session.userId) {
+  if (req.session && req.session.userId) {
     return res.redirect('/');
   }
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
 
-app.get('/call/:roomId', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'call.html'));
+// Временный маршрут для демо без авторизации
+app.get('/demo', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get('/call/:roomId', (req, res) => {
+  // Если БД недоступна, разрешаем доступ для демо
+  if (!isDatabaseConnected) {
+    return res.sendFile(path.join(__dirname, 'public', 'call.html'));
+  }
+  
+  // Если БД доступна, требуем авторизацию
+  if (req.session.userId) {
+    res.sendFile(path.join(__dirname, 'public', 'call.html'));
+  } else {
+    res.redirect('/login');
+  }
+});
+
+app.get('/', (req, res) => {
+  // Если БД недоступна, показываем демо
+  if (!isDatabaseConnected) {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+  
+  // Если БД доступна, требуем авторизацию
+  if (req.session.userId) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    res.redirect('/login');
+  }
 });
 
 // Socket.IO для видеозвонков
@@ -336,15 +427,69 @@ io.on('connection', (socket) => {
 // Запуск сервера
 async function startServer() {
   try {
-    await initDatabase();
+    console.log('🚀 Запуск сервера...');
     
-    server.listen(PORT, () => {
-      console.log(`Сервер запущен на порту ${PORT}`);
-      console.log(`База данных: ${process.env.DATABASE_URL ? 'PostgreSQL (Railway)' : 'PostgreSQL (локальная)'}`);
+    // Пытаемся подключиться к базе данных
+    isDatabaseConnected = await initDatabase();
+    
+    // Настраиваем сессии только если БД доступна
+    if (isDatabaseConnected) {
+      console.log('🔐 Настройка сессий с PostgreSQL...');
+      sessionMiddleware = session({
+        store: new pgSession({
+          pool: pool,
+          tableName: 'session'
+        }),
+        secret: process.env.SESSION_SECRET || 'video-call-secret-key-change-in-production',
+        resave: false,
+        saveUninitialized: false,
+        cookie: { 
+          secure: process.env.NODE_ENV === 'production',
+          maxAge: 24 * 60 * 60 * 1000 // 24 часа
+        }
+      });
+    } else {
+      console.log('🔐 Настройка сессий в памяти (демо режим)...');
+      sessionMiddleware = session({
+        secret: process.env.SESSION_SECRET || 'demo-secret-key',
+        resave: false,
+        saveUninitialized: false,
+        cookie: { 
+          secure: false,
+          maxAge: 24 * 60 * 60 * 1000
+        }
+      });
+    }
+    
+    // Применяем middleware для сессий
+    app.use(sessionMiddleware);
+    
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Сервер запущен на порту ${PORT}`);
+      console.log(`🌐 Режим: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`💾 База данных: ${isDatabaseConnected ? 'PostgreSQL подключена' : 'Работа без БД (демо режим)'}`);
+      
+      if (!isDatabaseConnected) {
+        console.log('⚠️  Для полной функциональности настройте DATABASE_URL');
+        console.log('📝 Доступен демо режим на /demo');
+      }
     });
   } catch (error) {
-    console.error('Ошибка запуска сервера:', error);
-    process.exit(1);
+    console.error('❌ Критическая ошибка запуска сервера:', error);
+    
+    // Пытаемся запустить хотя бы базовый сервер
+    console.log('🔄 Попытка запуска в аварийном режиме...');
+    
+    app.use(session({
+      secret: 'emergency-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: { secure: false, maxAge: 60 * 60 * 1000 }
+    }));
+    
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🆘 Сервер запущен в аварийном режиме на порту ${PORT}`);
+    });
   }
 }
 
