@@ -13,31 +13,104 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Настройка PostgreSQL с обработкой ошибок
+// Настройка PostgreSQL с автоматическим поиском переменных
+function getDatabaseUrl() {
+  // Список возможных переменных для PostgreSQL на Railway
+  const possibleVars = [
+    'DATABASE_URL',
+    'POSTGRES_URL', 
+    'POSTGRESQL_URL',
+    'DB_URL',
+    'PGURL',
+    // Railway специфичные переменные
+    'POSTGRES_DATABASE_URL',
+    'RAILWAY_POSTGRES_URL',
+    // Отдельные компоненты для сборки URL
+    process.env.PGHOST && process.env.PGDATABASE ? 
+      `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT || 5432}/${process.env.PGDATABASE}` : null
+  ];
+
+  for (const varName of possibleVars) {
+    if (typeof varName === 'string' && process.env[varName]) {
+      console.log(`✅ Найдена переменная базы данных: ${varName}`);
+      return process.env[varName];
+    } else if (varName && typeof varName !== 'string') {
+      console.log(`✅ Собран URL из компонентов PostgreSQL`);
+      return varName;
+    }
+  }
+
+  console.log('⚠️  Переменные PostgreSQL не найдены, проверьте:');
+  console.log('   - DATABASE_URL');
+  console.log('   - POSTGRES_URL');
+  console.log('   - Или настройте переменную в Railway Dashboard');
+  
+  return 'postgresql://localhost:5432/videocalls'; // fallback для локальной разработки
+}
+
+const databaseUrl = getDatabaseUrl();
+console.log(`🔗 Используем базу данных: ${databaseUrl.replace(/:[^:@]*@/, ':***@')}`); // скрываем пароль в логах
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/videocalls',
+  connectionString: databaseUrl,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   // Настройки для стабильности соединения
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
+  // Дополнительные настройки для Railway
+  statement_timeout: 30000,
+  query_timeout: 30000,
 });
 
-// Проверка подключения к базе данных
+// Проверка подключения к базе данных с детальной диагностикой
 async function testDatabaseConnection() {
   try {
+    console.log('🔄 Тестирование подключения к PostgreSQL...');
+    
     const client = await pool.connect();
-    await client.query('SELECT NOW()');
+    const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
     client.release();
+    
     console.log('✅ Подключение к PostgreSQL успешно');
+    console.log(`📅 Время сервера: ${result.rows[0].current_time}`);
+    console.log(`🐘 Версия PostgreSQL: ${result.rows[0].pg_version.split(' ')[0]} ${result.rows[0].pg_version.split(' ')[1]}`);
+    
     return true;
   } catch (error) {
-    console.error('❌ Ошибка подключения к PostgreSQL:', error.message);
+    console.error('❌ Ошибка подключения к PostgreSQL:');
+    console.error(`   Код ошибки: ${error.code}`);
+    console.error(`   Сообщение: ${error.message}`);
+    
+    if (error.code === 'ENOTFOUND') {
+      console.error('   🔍 Проблема: Хост базы данных не найден');
+      console.error('   💡 Решение: Проверьте DATABASE_URL в переменных окружения');
+    } else if (error.code === 'ECONNREFUSED') {
+      console.error('   🔍 Проблема: Соединение отклонено');
+      console.error('   💡 Решение: Убедитесь что PostgreSQL сервис запущен на Railway');
+    } else if (error.code === '28P01') {
+      console.error('   🔍 Проблема: Неверные учетные данные');
+      console.error('   💡 Решение: Проверьте пользователя и пароль в DATABASE_URL');
+    } else if (error.code === '3D000') {
+      console.error('   🔍 Проблема: База данных не существует');
+      console.error('   💡 Решение: Создайте базу данных или проверьте название в URL');
+    }
+    
+    console.error('   📋 Доступные переменные окружения:');
+    Object.keys(process.env)
+      .filter(key => key.includes('PG') || key.includes('POSTGRES') || key.includes('DATABASE'))
+      .forEach(key => {
+        const value = process.env[key];
+        const maskedValue = value && value.includes('://') ? 
+          value.replace(/:[^:@]*@/, ':***@') : value;
+        console.error(`      ${key}=${maskedValue}`);
+      });
+    
     return false;
   }
 }
 
-// Инициализация базы данных с обработкой ошибок
+// Инициализация базы данных с детальным логированием
 async function initDatabase() {
   try {
     console.log('🔄 Инициализация базы данных...');
@@ -45,11 +118,22 @@ async function initDatabase() {
     // Проверяем подключение
     const isConnected = await testDatabaseConnection();
     if (!isConnected) {
-      console.log('⚠️  База данных недоступна, запускаем без БД (только для разработки)');
+      console.log('⚠️  База данных недоступна, запускаем без БД (демо режим)');
+      console.log('');
+      console.log('📋 Инструкция для подключения PostgreSQL на Railway:');
+      console.log('   1. Откройте ваш проект на railway.app');
+      console.log('   2. Нажмите "Add Service" → "Database" → "PostgreSQL"');
+      console.log('   3. В настройках вашего основного сервиса добавьте переменную:');
+      console.log('      Имя: DATABASE_URL');
+      console.log('      Значение: ${{ Postgres.DATABASE_URL }}');
+      console.log('   4. Перезапустите сервис');
+      console.log('');
       return false;
     }
 
-    // Создаем таблицы
+    console.log('🏗️  Создание таблиц...');
+
+    // Создаем таблицу пользователей
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -60,7 +144,9 @@ async function initDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    console.log('✅ Таблица users создана/проверена');
 
+    // Создаем таблицу сессий
     await pool.query(`
       CREATE TABLE IF NOT EXISTS session (
         sid VARCHAR NOT NULL COLLATE "default",
@@ -74,7 +160,9 @@ async function initDatabase() {
       
       CREATE INDEX IF NOT EXISTS IDX_session_expire ON session(expire);
     `);
+    console.log('✅ Таблица session создана/проверена');
 
+    // Создаем таблицу комнат
     await pool.query(`
       CREATE TABLE IF NOT EXISTS rooms (
         id SERIAL PRIMARY KEY,
@@ -84,12 +172,18 @@ async function initDatabase() {
         ended_at TIMESTAMP NULL
       )
     `);
+    console.log('✅ Таблица rooms создана/проверена');
+
+    // Проверяем количество пользователей
+    const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
+    console.log(`👥 Пользователей в базе: ${userCount.rows[0].count}`);
 
     console.log('✅ База данных инициализирована успешно');
     return true;
   } catch (error) {
-    console.error('❌ Ошибка инициализации базы данных:', error.message);
-    console.log('⚠️  Запускаем без БД (только для разработки)');
+    console.error('❌ Ошибка инициализации базы данных:');
+    console.error(`   ${error.message}`);
+    console.log('⚠️  Запускаем без БД (демо режим)');
     return false;
   }
 }
@@ -329,13 +423,61 @@ app.post('/api/create-room', (req, res) => {
   }
 });
 
-// Healthcheck endpoint для Railway
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
-    database: isDatabaseConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString() 
-  });
+// Healthcheck endpoint для Railway с диагностикой
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: {
+      connected: isDatabaseConnected,
+      url_configured: !!getDatabaseUrl(),
+      available_vars: Object.keys(process.env)
+        .filter(key => key.includes('PG') || key.includes('POSTGRES') || key.includes('DATABASE'))
+        .reduce((obj, key) => {
+          obj[key] = process.env[key] ? 'SET' : 'NOT_SET';
+          return obj;
+        }, {})
+    },
+    environment: process.env.NODE_ENV || 'development'
+  };
+
+  // Если база данных подключена, добавляем дополнительную информацию
+  if (isDatabaseConnected) {
+    try {
+      const result = await pool.query('SELECT COUNT(*) as user_count FROM users');
+      health.database.user_count = parseInt(result.rows[0].user_count);
+      health.database.last_check = new Date().toISOString();
+    } catch (error) {
+      health.database.error = error.message;
+    }
+  }
+
+  res.status(200).json(health);
+});
+
+// Диагностический endpoint
+app.get('/debug', (req, res) => {
+  const debug = {
+    environment_variables: {
+      NODE_ENV: process.env.NODE_ENV || 'not set',
+      PORT: process.env.PORT || 'not set',
+      DATABASE_URL: process.env.DATABASE_URL ? 'SET (hidden)' : 'NOT SET',
+      SESSION_SECRET: process.env.SESSION_SECRET ? 'SET (hidden)' : 'NOT SET'
+    },
+    database: {
+      connected: isDatabaseConnected,
+      detected_url: getDatabaseUrl().replace(/:[^:@]*@/, ':***@')
+    },
+    postgres_variables: Object.keys(process.env)
+      .filter(key => key.includes('PG') || key.includes('POSTGRES') || key.includes('DATABASE'))
+      .reduce((obj, key) => {
+        obj[key] = process.env[key] ? 'SET' : 'NOT_SET';
+        return obj;
+      }, {}),
+    timestamp: new Date().toISOString()
+  };
+
+  res.json(debug);
 });
 
 // HTML маршруты (работают и без БД для демо)
@@ -468,10 +610,19 @@ async function startServer() {
       console.log(`✅ Сервер запущен на порту ${PORT}`);
       console.log(`🌐 Режим: ${process.env.NODE_ENV || 'development'}`);
       console.log(`💾 База данных: ${isDatabaseConnected ? 'PostgreSQL подключена' : 'Работа без БД (демо режим)'}`);
+      console.log(`🔗 Healthcheck: http://localhost:${PORT}/health`);
+      console.log(`🐛 Debug info: http://localhost:${PORT}/debug`);
       
       if (!isDatabaseConnected) {
-        console.log('⚠️  Для полной функциональности настройте DATABASE_URL');
-        console.log('📝 Доступен демо режим на /demo');
+        console.log('');
+        console.log('⚠️  Для полной функциональности настройте PostgreSQL:');
+        console.log('   📖 Инструкция: см. файл RAILWAY_SETUP.md');
+        console.log('   🌐 Демо режим доступен на /demo');
+        console.log('');
+      } else {
+        console.log('');
+        console.log('🎉 Все системы готовы к работе!');
+        console.log('');
       }
     });
   } catch (error) {
