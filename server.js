@@ -42,50 +42,23 @@ app.get('/ping', (req, res) => {
 // Глобальные переменные для базы данных
 let pool = null;
 
-// Настройка сессий БЕЗ базы данных (сначала)
-app.use(session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        maxAge: 24 * 60 * 60 * 1000,
-        secure: false,
-        httpOnly: true
-    }
-}));
-
-// Функция подключения к PostgreSQL
-async function connectToPostgreSQL() {
+// Функция подключения к PostgreSQL (СИНХРОННАЯ ИНИЦИАЛИЗАЦИЯ)
+async function initializeDatabase() {
     try {
-        console.log('🔄 Подключение к PostgreSQL Railway...');
+        console.log('🔄 Инициализация PostgreSQL...');
         
-        let dbConfig;
-        
-        // Railway автоматически создает DATABASE_URL для PostgreSQL
-        if (process.env.DATABASE_URL) {
-            dbConfig = {
-                connectionString: process.env.DATABASE_URL,
-                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-            };
-            console.log('📋 Используем DATABASE_URL для подключения');
-        } else {
-            // Fallback на отдельные переменные
-            dbConfig = {
-                host: process.env.PGHOST || 'localhost',
-                port: process.env.PGPORT || 5432,
-                user: process.env.PGUSER || 'postgres',
-                password: process.env.PGPASSWORD,
-                database: process.env.PGDATABASE || 'postgres',
-                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-            };
-            console.log('📋 Используем отдельные переменные PostgreSQL');
+        if (!process.env.DATABASE_URL) {
+            console.log('⚠️  DATABASE_URL не найден, работаем без базы данных');
+            return false;
         }
         
         // Создаем пул соединений
-        pool = new Pool(dbConfig);
+        pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        });
         
         // Тестируем подключение
-        console.log('🔄 Тестирование подключения...');
         const client = await pool.connect();
         const result = await client.query('SELECT NOW() as server_time, version() as version');
         client.release();
@@ -97,43 +70,11 @@ async function connectToPostgreSQL() {
         // Создаем таблицы
         await createTables();
         
-        // Настраиваем PostgreSQL Store для сессий
-        try {
-            const sessionStore = new pgSession({
-                pool: pool,
-                tableName: 'session'
-            });
-            
-            console.log('✅ PostgreSQL Store для сессий настроен');
-            
-            // Обновляем middleware сессий с PostgreSQL Store
-            app.use(session({
-                store: sessionStore,
-                secret: SESSION_SECRET,
-                resave: false,
-                saveUninitialized: false,
-                cookie: {
-                    maxAge: 24 * 60 * 60 * 1000,
-                    secure: process.env.NODE_ENV === 'production',
-                    httpOnly: true
-                }
-            }));
-            
-            console.log('✅ Сессии переключены на PostgreSQL Store');
-            
-        } catch (storeError) {
-            console.log('⚠️  Ошибка настройки PostgreSQL Store:', storeError.message);
-            console.log('💡 Используем MemoryStore (только для разработки)');
-        }
-        
         return true;
         
     } catch (error) {
         console.error('❌ Ошибка подключения к PostgreSQL:', error.message);
-        console.log('💡 Проверьте:');
-        console.log('   - Переменную DATABASE_URL в Railway');
-        console.log('   - Доступность PostgreSQL сервиса');
-        console.log('💡 Сервер продолжает работу без базы данных');
+        console.log('💡 Сервер будет работать без базы данных');
         pool = null;
         return false;
     }
@@ -178,9 +119,6 @@ async function createTables() {
         
         console.log('✅ Таблица rooms создана/проверена');
         
-        // Таблица сессий создается автоматически connect-pg-simple
-        console.log('✅ Таблица session будет создана автоматически');
-        
         // Проверяем количество пользователей
         const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
         console.log('👥 Пользователей в базе:', userCount.rows[0].count);
@@ -190,6 +128,45 @@ async function createTables() {
     } catch (error) {
         console.error('❌ Ошибка создания таблиц:', error.message);
         console.log('💡 Продолжаем работу без некоторых таблиц');
+    }
+}
+
+// Настройка сессий (ПОСЛЕ инициализации базы данных)
+function setupSessions() {
+    if (pool) {
+        // Используем PostgreSQL для хранения сессий
+        const sessionStore = new pgSession({
+            pool: pool,
+            tableName: 'session'
+        });
+        
+        app.use(session({
+            store: sessionStore,
+            secret: SESSION_SECRET,
+            resave: false,
+            saveUninitialized: false,
+            cookie: {
+                maxAge: 24 * 60 * 60 * 1000,
+                secure: process.env.NODE_ENV === 'production',
+                httpOnly: true
+            }
+        }));
+        
+        console.log('✅ Сессии настроены с PostgreSQL Store');
+    } else {
+        // Fallback на memory store
+        app.use(session({
+            secret: SESSION_SECRET,
+            resave: false,
+            saveUninitialized: false,
+            cookie: {
+                maxAge: 24 * 60 * 60 * 1000,
+                secure: false,
+                httpOnly: true
+            }
+        }));
+        
+        console.log('⚠️  Используется Memory Store для сессий (демо режим)');
     }
 }
 
@@ -517,34 +494,48 @@ io.on('connection', (socket) => {
     });
 });
 
-// ЗАПУСК СЕРВЕРА (БЕЗ ОЖИДАНИЯ БАЗЫ ДАННЫХ!)
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Сервер запущен на порту ${PORT}`);
-    console.log(`🌐 Локальный адрес: http://localhost:${PORT}`);
-    console.log(`🏥 Healthcheck: http://localhost:${PORT}/health`);
+// ЗАПУСК СЕРВЕРА С ПРАВИЛЬНОЙ ПОСЛЕДОВАТЕЛЬНОСТЬЮ
+async function startServer() {
+    console.log('🚀 Запуск сервера...');
     
-    if (process.env.RAILWAY_STATIC_URL) {
-        console.log(`🚂 Railway URL: ${process.env.RAILWAY_STATIC_URL}`);
-    }
+    // 1. Сначала инициализируем базу данных
+    const dbConnected = await initializeDatabase();
     
-    console.log('📋 Доступные маршруты:');
-    console.log('   GET  /health - Healthcheck для Railway');
-    console.log('   GET  /ping - Простой ping');
-    console.log('   GET  / - Главная страница');
-    console.log('   GET  /login - Страница входа');
-    console.log('   GET  /register - Страница регистрации');
-    console.log('   GET  /call/:roomId - Страница видеозвонка');
-    console.log('   POST /api/register - API регистрации');
-    console.log('   POST /api/login - API входа');
-    console.log('   POST /api/logout - API выхода');
-    console.log('   GET  /api/user - Информация о пользователе');
-    console.log('   POST /api/create-room - Создание комнаты');
+    // 2. Затем настраиваем сессии (с учетом результата подключения к БД)
+    setupSessions();
     
-    // Подключаемся к PostgreSQL ПОСЛЕ запуска сервера
-    setTimeout(() => {
-        connectToPostgreSQL();
-    }, 2000); // Ждем 2 секунды после запуска
-});
+    // 3. Запускаем сервер
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ Сервер запущен на порту ${PORT}`);
+        console.log(`🌐 Локальный адрес: http://localhost:${PORT}`);
+        console.log(`🏥 Healthcheck: http://localhost:${PORT}/health`);
+        
+        if (process.env.RAILWAY_STATIC_URL) {
+            console.log(`🚂 Railway URL: ${process.env.RAILWAY_STATIC_URL}`);
+        }
+        
+        console.log('📋 Доступные маршруты:');
+        console.log('   GET  /health - Healthcheck для Railway');
+        console.log('   GET  /ping - Простой ping');
+        console.log('   GET  / - Главная страница');
+        console.log('   GET  /login - Страница входа');
+        console.log('   GET  /register - Страница регистрации');
+        console.log('   GET  /call/:roomId - Страница видеозвонка');
+        console.log('   GET  /test - Тестовая страница');
+        console.log('   POST /api/register - API регистрации');
+        console.log('   POST /api/login - API входа');
+        console.log('   POST /api/logout - API выхода');
+        console.log('   GET  /api/user - Информация о пользователе');
+        console.log('   POST /api/create-room - Создание комнаты');
+        console.log('   GET  /api/stats - Статистика');
+        
+        if (dbConnected) {
+            console.log('💾 База данных: PostgreSQL готова к работе');
+        } else {
+            console.log('⚠️  База данных: работаем в демо режиме');
+        }
+    });
+}
 
 // Обработка ошибок
 process.on('uncaughtException', (error) => {
@@ -566,4 +557,10 @@ process.on('SIGTERM', () => {
         }
         process.exit(0);
     });
+});
+
+// Запускаем сервер
+startServer().catch(error => {
+    console.error('💥 Ошибка запуска сервера:', error);
+    process.exit(1);
 });
