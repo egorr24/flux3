@@ -184,7 +184,8 @@
                 socket = io();
                 
                 // Присоединяемся к комнате
-                socket.emit('join-room', roomId);
+                const userId = Math.random().toString(36).substring(2, 15);
+                socket.emit('join-room', roomId, userId);
                 
                 setupSocketEvents();
                 setupControls();
@@ -212,25 +213,37 @@
         function setupSocketEvents() {
             socket.on('user-connected', async (userId) => {
                 console.log('Пользователь подключился:', userId);
+                showNotification('Пользователь присоединился');
                 await createPeerConnection(userId, true);
             });
 
             socket.on('user-disconnected', (userId) => {
                 console.log('Пользователь отключился:', userId);
+                showNotification('Пользователь покинул звонок');
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('waiting').style.display = 'block';
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
             });
 
-            socket.on('offer', async (data) => {
-                await handleOffer(data.offer, data.sender);
+            socket.on('signal', async (data) => {
+                if (data.signal.type === 'offer') {
+                    await handleOffer(data.signal, data.from);
+                } else if (data.signal.type === 'answer') {
+                    await handleAnswer(data.signal);
+                } else if (data.signal.candidate) {
+                    await handleIceCandidate(data.signal);
+                }
             });
 
-            socket.on('answer', async (data) => {
-                await handleAnswer(data.answer);
-            });
-
-            socket.on('ice-candidate', async (data) => {
-                await handleIceCandidate(data.candidate);
+            socket.on('room-users', (users) => {
+                console.log('Пользователи в комнате:', users);
+                if (users.length > 0) {
+                    // Подключаемся к первому пользователю
+                    createPeerConnection(users[0], true);
+                }
             });
         }
 
@@ -255,9 +268,10 @@
             // Обрабатываем ICE кандидатов
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
-                    socket.emit('ice-candidate', {
-                        target: userId,
-                        candidate: event.candidate
+                    socket.emit('signal', {
+                        roomId: roomId,
+                        signal: event.candidate,
+                        to: userId
                     });
                 }
             };
@@ -267,10 +281,10 @@
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
-                socket.emit('offer', {
-                    target: userId,
-                    offer: offer,
-                    sender: socket.id
+                socket.emit('signal', {
+                    roomId: roomId,
+                    signal: offer,
+                    to: userId
                 });
             }
         }
@@ -283,10 +297,10 @@
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
             
-            socket.emit('answer', {
-                target: senderId,
-                answer: answer,
-                sender: socket.id
+            socket.emit('signal', {
+                roomId: roomId,
+                signal: answer,
+                to: senderId
             });
         }
 
