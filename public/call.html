@@ -4,62 +4,342 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Видеозвонок</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #1a1a1a; 
+            color: white; 
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header { 
+            padding: 1rem; 
+            background: rgba(0,0,0,0.5); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        .video-container { 
+            position: relative; 
+            height: calc(100vh - 140px); 
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #localVideo { 
+            position: absolute; 
+            top: 20px; 
+            right: 20px; 
+            width: 200px; 
+            height: 150px; 
+            border-radius: 8px; 
+            border: 2px solid #667eea;
+            z-index: 10;
+        }
+        #remoteVideo { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+        }
+        .controls { 
+            padding: 1rem; 
+            background: rgba(0,0,0,0.8); 
+            display: flex; 
+            justify-content: center; 
+            gap: 1rem;
+        }
+        .control-btn { 
+            width: 50px; 
+            height: 50px; 
+            border-radius: 50%; 
+            border: none; 
+            font-size: 1.2rem; 
+            cursor: pointer; 
+            background: rgba(255,255,255,0.2); 
+            color: white;
+        }
+        .control-btn:hover { background: rgba(255,255,255,0.3); }
+        .control-btn.off { background: #dc3545; }
+        .control-btn.end { background: #dc3545; }
+        .notification { 
+            position: fixed; 
+            top: 20px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            background: #28a745; 
+            color: white; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            z-index: 1000;
+            display: none;
+        }
+        .notification.error { background: #dc3545; }
+        .waiting { 
+            text-align: center; 
+            font-size: 1.2rem; 
+            opacity: 0.7;
+        }
+    </style>
 </head>
 <body>
-    <div class="call-container">
-        <header class="call-header">
-            <h1>Видеозвонок</h1>
-            <div class="room-info">
-                <span>Комната: <span id="currentRoomId"></span></span>
-            </div>
-        </header>
-
-        <main class="call-main">
-            <div class="video-container">
-                <video id="localVideo" autoplay muted playsinline></video>
-                <div id="remoteVideos"></div>
-            </div>
-
-            <div class="controls">
-                <button id="toggleVideo" class="control-btn video-on" title="Включить/выключить камеру">
-                    📹
-                </button>
-                <button id="toggleAudio" class="control-btn audio-on" title="Включить/выключить микрофон">
-                    🎤
-                </button>
-                <button id="shareScreen" class="control-btn" title="Демонстрация экрана">
-                    🖥️
-                </button>
-                <button id="copyRoomLink" class="control-btn" title="Копировать ссылку на комнату">
-                    🔗
-                </button>
-                <button id="endCall" class="control-btn end-call" title="Завершить звонок">
-                    📞
-                </button>
-            </div>
-        </main>
-
-        <div id="participants">
-            <h3>Участники (<span id="participantCount">1</span>)</h3>
-            <div id="participantList">
-                <div class="participant">Вы</div>
-            </div>
-        </div>
+    <div class="header">
+        <h1>Видеозвонок</h1>
+        <span>Комната: <span id="roomId"></span></span>
     </div>
 
-    <div id="notification" class="notification hidden"></div>
+    <div class="video-container">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <video id="remoteVideo" autoplay playsinline style="display: none;"></video>
+        <div id="waiting" class="waiting">Ожидание подключения...</div>
+    </div>
+
+    <div class="controls">
+        <button id="videoBtn" class="control-btn" title="Камера">📹</button>
+        <button id="audioBtn" class="control-btn" title="Микрофон">🎤</button>
+        <button id="shareBtn" class="control-btn" title="Экран">🖥️</button>
+        <button id="copyBtn" class="control-btn" title="Ссылка">🔗</button>
+        <button id="endBtn" class="control-btn end" title="Завершить">📞</button>
+    </div>
+
+    <div id="notification" class="notification"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Проверка загрузки Socket.IO
-        if (typeof io === 'undefined') {
-            console.error('Socket.IO не загружен!');
-            document.body.innerHTML += '<div style="position:fixed;top:0;left:0;background:red;color:white;padding:10px;z-index:9999;">Ошибка: Socket.IO не загружен</div>';
-        } else {
-            console.log('Socket.IO загружен успешно');
+        // Глобальные переменные
+        let socket;
+        let localStream;
+        let remoteStream;
+        let peerConnection;
+        let roomId;
+        let isVideoOn = true;
+        let isAudioOn = true;
+
+        // WebRTC конфигурация
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        // Получаем ID комнаты из URL
+        roomId = window.location.pathname.split('/call/')[1];
+        document.getElementById('roomId').textContent = roomId;
+
+        // Инициализация
+        async function init() {
+            try {
+                // Получаем доступ к камере и микрофону
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+                
+                document.getElementById('localVideo').srcObject = localStream;
+                
+                // Подключаемся к серверу
+                socket = io();
+                
+                // Присоединяемся к комнате
+                socket.emit('join-room', roomId);
+                
+                setupSocketEvents();
+                setupControls();
+                
+                showNotification('Подключено к комнате');
+                
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showNotification('Ошибка доступа к камере/микрофону', 'error');
+            }
         }
+
+        // Настройка Socket.IO событий
+        function setupSocketEvents() {
+            socket.on('user-connected', async (userId) => {
+                console.log('Пользователь подключился:', userId);
+                await createPeerConnection(userId, true);
+            });
+
+            socket.on('user-disconnected', (userId) => {
+                console.log('Пользователь отключился:', userId);
+                document.getElementById('remoteVideo').style.display = 'none';
+                document.getElementById('waiting').style.display = 'block';
+            });
+
+            socket.on('offer', async (data) => {
+                await handleOffer(data.offer, data.sender);
+            });
+
+            socket.on('answer', async (data) => {
+                await handleAnswer(data.answer);
+            });
+
+            socket.on('ice-candidate', async (data) => {
+                await handleIceCandidate(data.candidate);
+            });
+        }
+
+        // Создание WebRTC соединения
+        async function createPeerConnection(userId, isInitiator) {
+            peerConnection = new RTCPeerConnection(config);
+            
+            // Добавляем локальный поток
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            // Обрабатываем удаленный поток
+            peerConnection.ontrack = (event) => {
+                remoteStream = event.streams[0];
+                const remoteVideo = document.getElementById('remoteVideo');
+                remoteVideo.srcObject = remoteStream;
+                remoteVideo.style.display = 'block';
+                document.getElementById('waiting').style.display = 'none';
+            };
+
+            // Обрабатываем ICE кандидатов
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', {
+                        target: userId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            // Если мы инициаторы, создаем offer
+            if (isInitiator) {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                socket.emit('offer', {
+                    target: userId,
+                    offer: offer,
+                    sender: socket.id
+                });
+            }
+        }
+
+        // Обработка offer
+        async function handleOffer(offer, senderId) {
+            await createPeerConnection(senderId, false);
+            await peerConnection.setRemoteDescription(offer);
+            
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            socket.emit('answer', {
+                target: senderId,
+                answer: answer,
+                sender: socket.id
+            });
+        }
+
+        // Обработка answer
+        async function handleAnswer(answer) {
+            await peerConnection.setRemoteDescription(answer);
+        }
+
+        // Обработка ICE кандидата
+        async function handleIceCandidate(candidate) {
+            await peerConnection.addIceCandidate(candidate);
+        }
+
+        // Настройка контролов
+        function setupControls() {
+            document.getElementById('videoBtn').onclick = toggleVideo;
+            document.getElementById('audioBtn').onclick = toggleAudio;
+            document.getElementById('shareBtn').onclick = shareScreen;
+            document.getElementById('copyBtn').onclick = copyLink;
+            document.getElementById('endBtn').onclick = endCall;
+        }
+
+        // Переключение видео
+        function toggleVideo() {
+            isVideoOn = !isVideoOn;
+            localStream.getVideoTracks()[0].enabled = isVideoOn;
+            
+            const btn = document.getElementById('videoBtn');
+            btn.classList.toggle('off', !isVideoOn);
+        }
+
+        // Переключение аудио
+        function toggleAudio() {
+            isAudioOn = !isAudioOn;
+            localStream.getAudioTracks()[0].enabled = isAudioOn;
+            
+            const btn = document.getElementById('audioBtn');
+            btn.classList.toggle('off', !isAudioOn);
+        }
+
+        // Демонстрация экрана
+        async function shareScreen() {
+            try {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true
+                });
+                
+                const videoTrack = screenStream.getVideoTracks()[0];
+                const sender = peerConnection.getSenders().find(s => 
+                    s.track && s.track.kind === 'video'
+                );
+                
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
+                
+                document.getElementById('localVideo').srcObject = screenStream;
+                
+                videoTrack.onended = () => {
+                    document.getElementById('localVideo').srcObject = localStream;
+                    if (sender) {
+                        sender.replaceTrack(localStream.getVideoTracks()[0]);
+                    }
+                };
+                
+            } catch (error) {
+                console.error('Ошибка демонстрации экрана:', error);
+            }
+        }
+
+        // Копирование ссылки
+        function copyLink() {
+            const link = window.location.href;
+            navigator.clipboard.writeText(link).then(() => {
+                showNotification('Ссылка скопирована');
+            });
+        }
+
+        // Завершение звонка
+        function endCall() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            if (socket) {
+                socket.disconnect();
+            }
+            window.location.href = '/';
+        }
+
+        // Показ уведомлений
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        // Запуск приложения
+        init();
     </script>
-    <script type="text/javascript" src="call.js" onerror="console.error('Ошибка загрузки call.js'); document.body.innerHTML += '<div style=\'position:fixed;top:50px;left:0;background:red;color:white;padding:10px;z-index:9999;\'>Ошибка загрузки call.js</div>';"></script>
 </body>
 </html>

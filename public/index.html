@@ -4,50 +4,130 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Видеозвонки</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { 
+            background: white; 
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 { text-align: center; margin-bottom: 2rem; color: #333; }
+        .card { margin-bottom: 1.5rem; }
+        .card h2 { margin-bottom: 1rem; color: #555; font-size: 1.2rem; }
+        button { 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1rem;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #5a6fd8; }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+        .room-info { 
+            background: #f8f9fa; 
+            padding: 1rem; 
+            border-radius: 8px; 
+            margin: 1rem 0;
+            display: none;
+        }
+        .link-container { display: flex; gap: 10px; margin-top: 10px; }
+        .link-container input { margin-bottom: 0; flex: 1; }
+        .link-container button { width: auto; margin-bottom: 0; }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>🎥 Видеозвонки</h1>
-            <p>Создайте комнату для видеозвонка или присоединитесь к существующей</p>
-        </header>
+        <h1>🎥 Видеозвонки</h1>
+        
+        <div class="card">
+            <h2>Создать новый звонок</h2>
+            <button onclick="createRoom()">📞 Создать комнату</button>
+        </div>
 
-        <main>
-            <div class="card">
-                <h2>Создать новый звонок</h2>
-                <button id="createRoom" class="btn btn-primary">
-                    📞 Создать комнату
-                </button>
-            </div>
+        <div class="card">
+            <h2>Присоединиться к звонку</h2>
+            <input type="text" id="roomInput" placeholder="Введите ID комнаты">
+            <button onclick="joinRoom()">🚪 Войти</button>
+        </div>
 
-            <div class="card">
-                <h2>Присоединиться к звонку</h2>
-                <div class="input-group">
-                    <input type="text" id="roomInput" placeholder="Введите ID комнаты">
-                    <button id="joinRoom" class="btn btn-secondary">
-                        🚪 Войти
-                    </button>
-                </div>
+        <div id="roomInfo" class="room-info">
+            <h2>Ваша комната создана!</h2>
+            <p><strong>ID комнаты:</strong> <span id="roomId"></span></p>
+            <p><strong>Ссылка для приглашения:</strong></p>
+            <div class="link-container">
+                <input type="text" id="roomLink" readonly>
+                <button onclick="copyLink()">📋 Копировать</button>
             </div>
-
-            <div id="roomInfo" class="card hidden">
-                <h2>Ваша комната создана!</h2>
-                <div class="room-details">
-                    <p><strong>ID комнаты:</strong> <span id="roomId"></span></p>
-                    <p><strong>Ссылка для приглашения:</strong></p>
-                    <div class="link-container">
-                        <input type="text" id="roomLink" readonly>
-                        <button id="copyLink" class="btn btn-copy">📋 Копировать</button>
-                    </div>
-                </div>
-                <button id="startCall" class="btn btn-primary">
-                    🎥 Начать звонок
-                </button>
-            </div>
-        </main>
+            <button onclick="startCall()" style="margin-top: 15px;">🎥 Начать звонок</button>
+        </div>
     </div>
 
-    <script type="text/javascript" src="app.js" onerror="console.error('Ошибка загрузки app.js'); alert('Ошибка загрузки скрипта app.js');"></script>
+    <script>
+        function generateRoomId() {
+            return Math.random().toString(36).substring(2, 15);
+        }
+
+        function createRoom() {
+            const roomId = generateRoomId();
+            const roomLink = window.location.origin + '/call/' + roomId;
+            
+            document.getElementById('roomId').textContent = roomId;
+            document.getElementById('roomLink').value = roomLink;
+            document.getElementById('roomInfo').style.display = 'block';
+            
+            localStorage.setItem('currentRoomId', roomId);
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('roomInput').value.trim();
+            if (roomId) {
+                window.location.href = '/call/' + roomId;
+            } else {
+                alert('Введите ID комнаты');
+            }
+        }
+
+        function copyLink() {
+            const linkInput = document.getElementById('roomLink');
+            linkInput.select();
+            document.execCommand('copy');
+            alert('Ссылка скопирована!');
+        }
+
+        function startCall() {
+            const roomId = localStorage.getItem('currentRoomId');
+            if (roomId) {
+                window.location.href = '/call/' + roomId;
+            }
+        }
+
+        document.getElementById('roomInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                joinRoom();
+            }
+        });
+    </script>
 </body>
 </html>
