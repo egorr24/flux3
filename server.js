@@ -3,8 +3,8 @@ const http = require('http');
 const socketIo = require('socket.io');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
-const mysql = require('mysql2/promise');
-const MySQLStore = require('express-mysql-session')(session);
+const { Pool } = require('pg');
+const pgSession = require('connect-pg-simple')(session);
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
@@ -27,7 +27,7 @@ app.get('/health', (req, res) => {
         status: 'OK', 
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        database: db ? 'connected' : 'not_connected'
+        database: pool ? 'connected' : 'not_connected'
     });
 });
 
@@ -36,8 +36,7 @@ app.get('/ping', (req, res) => {
 });
 
 // Глобальные переменные для базы данных
-let db = null;
-let sessionStore = null;
+let pool = null;
 
 // Настройка сессий БЕЗ базы данных (сначала)
 app.use(session({
@@ -51,135 +50,134 @@ app.use(session({
     }
 }));
 
-// Функция подключения к MySQL с вашими данными
-async function connectToMySQL() {
+// Функция подключения к PostgreSQL
+async function connectToPostgreSQL() {
     try {
-        console.log('🔄 Подключение к MySQL Railway...');
+        console.log('🔄 Подключение к PostgreSQL Railway...');
         
         let dbConfig;
         
-        // Если есть MYSQL_URL, используем его (проще)
-        if (process.env.MYSQL_URL) {
-            const url = new URL(process.env.MYSQL_URL);
+        // Railway автоматически создает DATABASE_URL для PostgreSQL
+        if (process.env.DATABASE_URL) {
             dbConfig = {
-                host: url.hostname,
-                port: url.port || 3306,
-                user: url.username,
-                password: url.password,
-                database: url.pathname.slice(1), // убираем первый слеш
-                ssl: { rejectUnauthorized: false },
-                connectTimeout: 60000,
-                acquireTimeout: 60000,
-                timeout: 60000
+                connectionString: process.env.DATABASE_URL,
+                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
             };
-            console.log('📋 Используем MYSQL_URL для подключения');
+            console.log('📋 Используем DATABASE_URL для подключения');
         } else {
-            // Конфигурация для вашей базы данных Railway
+            // Fallback на отдельные переменные
             dbConfig = {
-                host: process.env.MYSQLHOST || 'mysql.railway.internal',
-                port: process.env.MYSQLPORT || 3306,
-                user: process.env.MYSQLUSER || 'root',
-                password: process.env.MYSQLPASSWORD || 'WppmJGnSRhmHmbSLjYzoEUrsqAnImRzS',
-                database: process.env.MYSQLDATABASE || 'railway',
-                ssl: { rejectUnauthorized: false },
-                connectTimeout: 60000,
-                acquireTimeout: 60000,
-                timeout: 60000
+                host: process.env.PGHOST || 'localhost',
+                port: process.env.PGPORT || 5432,
+                user: process.env.PGUSER || 'postgres',
+                password: process.env.PGPASSWORD,
+                database: process.env.PGDATABASE || 'postgres',
+                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
             };
-            console.log('📋 Используем отдельные переменные MySQL');
+            console.log('📋 Используем отдельные переменные PostgreSQL');
         }
         
-        console.log(`📍 Подключение к: ${dbConfig.host}:${dbConfig.port}`);
-        console.log(`👤 Пользователь: ${dbConfig.user}`);
-        console.log(`🗄️  База данных: ${dbConfig.database}`);
-        
-        // Создаем подключение
-        db = await mysql.createConnection(dbConfig);
+        // Создаем пул соединений
+        pool = new Pool(dbConfig);
         
         // Тестируем подключение
         console.log('🔄 Тестирование подключения...');
-        await db.execute('SELECT 1 as test');
-        console.log('✅ MySQL подключен успешно!');
+        const client = await pool.connect();
+        const result = await client.query('SELECT NOW() as server_time, version() as version');
+        client.release();
         
-        // Получаем информацию о сервере
-        try {
-            const [serverInfo] = await db.execute('SELECT NOW() as server_time, VERSION() as version');
-            console.log('📅 Время сервера:', serverInfo[0].server_time);
-            console.log('🐬 Версия MySQL:', serverInfo[0].version);
-        } catch (infoError) {
-            console.log('⚠️  Не удалось получить информацию о сервере:', infoError.message);
-        }
+        console.log('✅ PostgreSQL подключен успешно!');
+        console.log('📅 Время сервера:', result.rows[0].server_time);
+        console.log('🐘 Версия PostgreSQL:', result.rows[0].version.split(' ')[0] + ' ' + result.rows[0].version.split(' ')[1]);
         
         // Создаем таблицы
         await createTables();
         
-        // Настраиваем MySQL Store для сессий
+        // Настраиваем PostgreSQL Store для сессий
         try {
-            sessionStore = new MySQLStore({
-                host: dbConfig.host,
-                port: dbConfig.port,
-                user: dbConfig.user,
-                password: dbConfig.password,
-                database: dbConfig.database,
-                ssl: dbConfig.ssl
+            const sessionStore = new pgSession({
+                pool: pool,
+                tableName: 'session'
             });
-            console.log('✅ MySQL Store для сессий настроен');
+            
+            // Обновляем middleware сессий
+            app.use(session({
+                store: sessionStore,
+                secret: SESSION_SECRET,
+                resave: false,
+                saveUninitialized: false,
+                cookie: {
+                    maxAge: 24 * 60 * 60 * 1000,
+                    secure: process.env.NODE_ENV === 'production',
+                    httpOnly: true
+                }
+            }));
+            
+            console.log('✅ PostgreSQL Store для сессий настроен');
         } catch (storeError) {
-            console.log('⚠️  Ошибка настройки MySQL Store:', storeError.message);
+            console.log('⚠️  Ошибка настройки PostgreSQL Store:', storeError.message);
         }
         
         return true;
         
     } catch (error) {
-        console.error('❌ Ошибка подключения к MySQL:', error.message);
+        console.error('❌ Ошибка подключения к PostgreSQL:', error.message);
         console.log('💡 Проверьте:');
-        console.log('   - Переменные MYSQLHOST, MYSQLPORT, MYSQLUSER, MYSQLPASSWORD');
-        console.log('   - Доступность базы данных trolley.proxy.rlwy.net:39223');
-        console.log('   - Правильность пароля');
+        console.log('   - Переменную DATABASE_URL в Railway');
+        console.log('   - Доступность PostgreSQL сервиса');
         console.log('💡 Сервер продолжает работу без базы данных');
-        db = null;
+        pool = null;
         return false;
     }
 }
 
 async function createTables() {
     try {
-        console.log('🏗️  Создание таблиц...');
+        console.log('🏗️  Создание таблиц PostgreSQL...');
         
         // Таблица пользователей
-        await db.execute(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 username VARCHAR(50) UNIQUE NOT NULL,
                 email VARCHAR(100) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_email (email),
-                INDEX idx_username (username)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         `);
+        
+        // Создаем индексы
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
+        
         console.log('✅ Таблица users создана/проверена');
         
         // Таблица комнат
-        await db.execute(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS rooms (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 room_id VARCHAR(50) UNIQUE NOT NULL,
-                creator_id INT,
+                creator_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                INDEX idx_room_id (room_id),
-                INDEX idx_creator (creator_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                is_active BOOLEAN DEFAULT TRUE
+            )
         `);
+        
+        // Создаем индексы для комнат
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_rooms_room_id ON rooms(room_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_rooms_creator ON rooms(creator_id)`);
+        
         console.log('✅ Таблица rooms создана/проверена');
         
-        // Проверяем количество пользователей
-        const [userCount] = await db.execute('SELECT COUNT(*) as count FROM users');
-        console.log('👥 Пользователей в базе:', userCount[0].count);
+        // Таблица сессий создается автоматически connect-pg-simple
+        console.log('✅ Таблица session будет создана автоматически');
         
-        console.log('✅ База данных инициализирована успешно');
+        // Проверяем количество пользователей
+        const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
+        console.log('👥 Пользователей в базе:', userCount.rows[0].count);
+        
+        console.log('✅ База данных PostgreSQL инициализирована успешно');
         
     } catch (error) {
         console.error('❌ Ошибка создания таблиц:', error.message);
@@ -217,17 +215,17 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: 'Неверный формат email' });
         }
         
-        if (!db) {
+        if (!pool) {
             return res.status(500).json({ error: 'База данных недоступна. Попробуйте позже.' });
         }
         
         // Проверяем существование пользователя
-        const [existingUsers] = await db.execute(
-            'SELECT id FROM users WHERE email = ? OR username = ?',
+        const existingUser = await pool.query(
+            'SELECT id FROM users WHERE email = $1 OR username = $2',
             [email, username]
         );
         
-        if (existingUsers.length > 0) {
+        if (existingUser.rows.length > 0) {
             return res.status(400).json({ error: 'Пользователь с таким email или именем уже существует' });
         }
         
@@ -236,12 +234,12 @@ app.post('/api/register', async (req, res) => {
         const passwordHash = await bcrypt.hash(password, saltRounds);
         
         // Создаем пользователя
-        const [result] = await db.execute(
-            'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+        const result = await pool.query(
+            'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
             [username, email, passwordHash]
         );
         
-        const userId = result.insertId;
+        const userId = result.rows[0].id;
         
         // Автоматический вход после регистрации
         req.session.userId = userId;
@@ -272,21 +270,21 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ error: 'Email и пароль обязательны' });
         }
         
-        if (!db) {
+        if (!pool) {
             return res.status(500).json({ error: 'База данных недоступна. Попробуйте позже.' });
         }
         
         // Ищем пользователя
-        const [users] = await db.execute(
-            'SELECT id, username, email, password_hash FROM users WHERE email = ?',
+        const result = await pool.query(
+            'SELECT id, username, email, password_hash FROM users WHERE email = $1',
             [email]
         );
         
-        if (users.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Неверный email или пароль' });
         }
         
-        const user = users[0];
+        const user = result.rows[0];
         
         // Проверяем пароль
         const isValidPassword = await bcrypt.compare(password, user.password_hash);
@@ -341,7 +339,7 @@ app.get('/api/user', async (req, res) => {
             });
         }
         
-        if (!db) {
+        if (!pool) {
             return res.json({ 
                 isAuthenticated: false, 
                 error: 'База данных недоступна' 
@@ -349,12 +347,12 @@ app.get('/api/user', async (req, res) => {
         }
         
         // Получаем актуальную информацию о пользователе
-        const [users] = await db.execute(
-            'SELECT id, username, email, created_at FROM users WHERE id = ?',
+        const result = await pool.query(
+            'SELECT id, username, email, created_at FROM users WHERE id = $1',
             [req.session.userId]
         );
         
-        if (users.length === 0) {
+        if (result.rows.length === 0) {
             // Пользователь удален из базы, очищаем сессию
             req.session.destroy();
             return res.json({ 
@@ -363,7 +361,7 @@ app.get('/api/user', async (req, res) => {
             });
         }
         
-        const user = users[0];
+        const user = result.rows[0];
         
         res.json({
             isAuthenticated: true,
@@ -389,10 +387,10 @@ app.post('/api/create-room', async (req, res) => {
         const roomLink = `${req.protocol}://${req.get('host')}/call/${roomId}`;
         
         // Если пользователь авторизован и база доступна, сохраняем в базу
-        if (req.session.userId && db) {
+        if (req.session.userId && pool) {
             try {
-                await db.execute(
-                    'INSERT INTO rooms (room_id, creator_id) VALUES (?, ?)',
+                await pool.query(
+                    'INSERT INTO rooms (room_id, creator_id) VALUES ($1, $2)',
                     [roomId, req.session.userId]
                 );
                 console.log(`🏠 Комната создана: ${roomId} пользователем ${req.session.username}`);
@@ -506,9 +504,9 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('   GET  /api/user - Информация о пользователе');
     console.log('   POST /api/create-room - Создание комнаты');
     
-    // Подключаемся к MySQL ПОСЛЕ запуска сервера
+    // Подключаемся к PostgreSQL ПОСЛЕ запуска сервера
     setTimeout(() => {
-        connectToMySQL();
+        connectToPostgreSQL();
     }, 2000); // Ждем 2 секунды после запуска
 });
 
@@ -526,8 +524,8 @@ process.on('SIGTERM', () => {
     console.log('🛑 Получен сигнал SIGTERM, завершение работы...');
     server.close(() => {
         console.log('✅ Сервер остановлен');
-        if (db) {
-            db.end();
+        if (pool) {
+            pool.end();
             console.log('✅ Соединение с БД закрыто');
         }
         process.exit(0);
