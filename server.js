@@ -420,6 +420,30 @@ app.post('/api/create-room', async (req, res) => {
     }
 });
 
+// Статистика
+app.get('/api/stats', async (req, res) => {
+    try {
+        if (!pool) {
+            return res.json({ users: 0, rooms: 0 });
+        }
+        
+        // Получаем количество пользователей
+        const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
+        
+        // Получаем количество комнат
+        const roomCount = await pool.query('SELECT COUNT(*) as count FROM rooms');
+        
+        res.json({
+            users: parseInt(userCount.rows[0].count),
+            rooms: parseInt(roomCount.rows[0].count)
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка получения статистики:', error);
+        res.json({ users: 0, rooms: 0 });
+    }
+});
+
 // Статические маршруты
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

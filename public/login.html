@@ -4,127 +4,51 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вход - Видеозвонки</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: Arial, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container { 
-            background: white; 
-            padding: 2rem; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            max-width: 400px;
-            width: 90%;
-        }
-        h1 { 
-            text-align: center; 
-            margin-bottom: 2rem; 
-            color: #333; 
-            font-size: 2rem;
-        }
-        .form-group { 
-            margin-bottom: 1rem; 
-        }
-        label { 
-            display: block; 
-            margin-bottom: 0.5rem; 
-            color: #555; 
-            font-weight: 500;
-        }
-        input { 
-            width: 100%; 
-            padding: 12px; 
-            border: 2px solid #ddd; 
-            border-radius: 8px; 
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-        input:focus { 
-            outline: none; 
-            border-color: #667eea; 
-        }
-        button { 
-            background: #667eea; 
-            color: white; 
-            border: none; 
-            padding: 12px 24px; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-size: 1rem;
-            width: 100%;
-            margin-bottom: 1rem;
-            transition: background 0.3s;
-        }
-        button:hover { background: #5a6fd8; }
-        button:disabled { 
-            background: #ccc; 
-            cursor: not-allowed; 
-        }
-        .error { 
-            background: #f8d7da; 
-            color: #721c24; 
-            padding: 10px; 
-            border-radius: 5px; 
-            margin-bottom: 1rem;
-            display: none;
-        }
-        .success { 
-            background: #d4edda; 
-            color: #155724; 
-            padding: 10px; 
-            border-radius: 5px; 
-            margin-bottom: 1rem;
-            display: none;
-        }
-        .link { 
-            text-align: center; 
-            margin-top: 1rem; 
-        }
-        .link a { 
-            color: #667eea; 
-            text-decoration: none; 
-        }
-        .link a:hover { 
-            text-decoration: underline; 
-        }
-        .loading { 
-            display: none; 
-            text-align: center; 
-            margin-top: 1rem;
-        }
-    </style>
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>🎥 Вход</h1>
-        
-        <div id="error" class="error"></div>
-        <div id="success" class="success"></div>
-        
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="email">Email:</label>
-                <input type="email" id="email" name="email" required>
+    <div class="center-screen">
+        <div class="container">
+            <h1>🎥 Вход</h1>
+            
+            <div id="error" class="notification error"></div>
+            <div id="success" class="notification success"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">📧 Email:</label>
+                    <input type="email" id="email" name="email" required placeholder="Введите ваш email">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">🔒 Пароль:</label>
+                    <input type="password" id="password" name="password" required placeholder="Введите пароль">
+                </div>
+                
+                <button type="submit" id="submitBtn">
+                    <span id="submitText">🚀 Войти</span>
+                </button>
+            </form>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Вход в систему...</p>
             </div>
             
-            <div class="form-group">
-                <label for="password">Пароль:</label>
-                <input type="password" id="password" name="password" required>
+            <div class="link">
+                <p>Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
             </div>
             
-            <button type="submit" id="submitBtn">Войти</button>
-        </form>
-        
-        <div class="loading" id="loading">Вход в систему...</div>
-        
-        <div class="link">
-            <p>Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="userCount">-</div>
+                    <div class="stat-label">Пользователей</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="roomCount">-</div>
+                    <div class="stat-label">Комнат создано</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -133,49 +57,76 @@
         const errorDiv = document.getElementById('error');
         const successDiv = document.getElementById('success');
         const submitBtn = document.getElementById('submitBtn');
+        const submitText = document.getElementById('submitText');
         const loading = document.getElementById('loading');
+
+        // Загружаем статистику
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    document.getElementById('userCount').textContent = stats.users || '0';
+                    document.getElementById('roomCount').textContent = stats.rooms || '0';
+                }
+            } catch (error) {
+                console.log('Не удалось загрузить статистику');
+            }
+        }
 
         function showError(message) {
             errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            successDiv.style.display = 'none';
+            errorDiv.classList.add('show');
+            successDiv.classList.remove('show');
+            
+            // Автоматически скрываем через 5 секунд
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+            }, 5000);
         }
 
         function showSuccess(message) {
             successDiv.textContent = message;
-            successDiv.style.display = 'block';
-            errorDiv.style.display = 'none';
+            successDiv.classList.add('show');
+            errorDiv.classList.remove('show');
         }
 
         function hideMessages() {
-            errorDiv.style.display = 'none';
-            successDiv.style.display = 'none';
+            errorDiv.classList.remove('show');
+            successDiv.classList.remove('show');
         }
 
         function setLoading(isLoading) {
             if (isLoading) {
                 submitBtn.disabled = true;
-                submitBtn.textContent = 'Вход...';
-                loading.style.display = 'block';
-                form.style.display = 'none';
+                submitText.textContent = '⏳ Вход...';
+                loading.classList.add('show');
+                form.style.opacity = '0.7';
             } else {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Войти';
-                loading.style.display = 'none';
-                form.style.display = 'block';
+                submitText.textContent = '🚀 Войти';
+                loading.classList.remove('show');
+                form.style.opacity = '1';
             }
         }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             hideMessages();
-            setLoading(true);
-
+            
             const formData = new FormData(form);
             const data = {
-                email: formData.get('email'),
+                email: formData.get('email').trim(),
                 password: formData.get('password')
             };
+
+            // Простая валидация
+            if (!data.email || !data.password) {
+                showError('Пожалуйста, заполните все поля');
+                return;
+            }
+
+            setLoading(true);
 
             try {
                 const response = await fetch('/api/login', {
@@ -189,22 +140,25 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showSuccess('Вход выполнен успешно! Перенаправление...');
+                    showSuccess(`🎉 Добро пожаловать обратно! Перенаправление...`);
                     setTimeout(() => {
                         window.location.href = '/';
-                    }, 1000);
+                    }, 1500);
                 } else {
                     setLoading(false);
                     showError(result.error || 'Ошибка входа');
                 }
             } catch (error) {
                 setLoading(false);
-                showError('Ошибка сети. Попробуйте еще раз.');
+                showError('Ошибка сети. Проверьте подключение и попробуйте еще раз.');
             }
         });
 
         // Автофокус на первое поле
         document.getElementById('email').focus();
+        
+        // Загружаем статистику при загрузке страницы
+        loadStats();
     </script>
 </body>
 </html>

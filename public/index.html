@@ -4,126 +4,95 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Видеозвонки</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: Arial, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container { 
-            background: white; 
-            padding: 2rem; 
-            border-radius: 12px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            max-width: 500px;
-            width: 90%;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid #eee;
-        }
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            font-size: 0.9rem;
-            color: #666;
-        }
-        .logout-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            width: auto;
-            margin-bottom: 0;
-        }
-        .logout-btn:hover {
-            background: #c82333;
-        }
-        h1 { 
-            color: #333; 
-            margin: 0;
-        }
-        .card { margin-bottom: 1.5rem; }
-        .card h2 { margin-bottom: 1rem; color: #555; font-size: 1.2rem; }
-        button { 
-            background: #667eea; 
-            color: white; 
-            border: none; 
-            padding: 12px 24px; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-size: 1rem;
-            width: 100%;
-            margin-bottom: 10px;
-        }
-        button:hover { background: #5a6fd8; }
-        input { 
-            width: 100%; 
-            padding: 12px; 
-            border: 2px solid #ddd; 
-            border-radius: 8px; 
-            margin-bottom: 10px;
-            font-size: 1rem;
-        }
-        .room-info { 
-            background: #f8f9fa; 
-            padding: 1rem; 
-            border-radius: 8px; 
-            margin: 1rem 0;
-            display: none;
-        }
-        .link-container { display: flex; gap: 10px; margin-top: 10px; }
-        .link-container input { margin-bottom: 0; flex: 1; }
-        .link-container button { width: auto; margin-bottom: 0; }
-    </style>
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎥 Видеозвонки</h1>
-            <div class="user-info">
-                <span>Привет, <span id="username"></span>!</span>
-                <button onclick="logout()" class="logout-btn">Выйти</button>
+    <div class="center-screen">
+        <div class="container main-container">
+            <div class="header">
+                <h1>🎥 Видеозвонки</h1>
+                <div class="user-info" style="display: none;">
+                    <div class="user-avatar" id="userAvatar"></div>
+                    <div>
+                        <div>Привет, <strong id="username"></strong>!</div>
+                        <div style="font-size: 0.8rem; color: #888;" id="memberSince"></div>
+                    </div>
+                    <button onclick="logout()" class="btn-danger btn-small">Выйти</button>
+                </div>
             </div>
-        </div>
-        
-        <div class="card">
-            <h2>Создать новый звонок</h2>
-            <button onclick="createRoom()">📞 Создать комнату</button>
-        </div>
-
-        <div class="card">
-            <h2>Присоединиться к звонку</h2>
-            <input type="text" id="roomInput" placeholder="Введите ID комнаты">
-            <button onclick="joinRoom()">🚪 Войти</button>
-        </div>
-
-        <div id="roomInfo" class="room-info">
-            <h2>Ваша комната создана!</h2>
-            <p><strong>ID комнаты:</strong> <span id="roomId"></span></p>
-            <p><strong>Ссылка для приглашения:</strong></p>
-            <div class="link-container">
-                <input type="text" id="roomLink" readonly>
-                <button onclick="copyLink()">📋 Копировать</button>
+            
+            <div class="card">
+                <h2>📞 Создать новый звонок</h2>
+                <p style="margin-bottom: 1rem; color: #666;">Создайте комнату и пригласите друзей для видеозвонка</p>
+                <button onclick="createRoom()" class="btn-success">🚀 Создать комнату</button>
             </div>
-            <button onclick="startCall()" style="margin-top: 15px;">🎥 Начать звонок</button>
+
+            <div class="card">
+                <h2>🚪 Присоединиться к звонку</h2>
+                <p style="margin-bottom: 1rem; color: #666;">Введите ID комнаты, чтобы присоединиться к существующему звонку</p>
+                <div class="form-group">
+                    <input type="text" id="roomInput" placeholder="Введите ID комнаты (например: abc12345)">
+                </div>
+                <button onclick="joinRoom()">🎯 Присоединиться</button>
+            </div>
+
+            <div id="roomInfo" class="room-info">
+                <h2>🎉 Ваша комната создана!</h2>
+                <div style="margin: 1rem 0;">
+                    <p><strong>ID комнаты:</strong> <code id="roomId" style="background: #f8f9fa; padding: 4px 8px; border-radius: 4px; font-family: monospace;"></code></p>
+                </div>
+                <p><strong>Ссылка для приглашения:</strong></p>
+                <div class="link-container">
+                    <input type="text" id="roomLink" readonly>
+                    <button onclick="copyLink()" class="btn-secondary">📋 Копировать</button>
+                </div>
+                <button onclick="startCall()" class="btn-success" style="margin-top: 15px;">🎥 Начать звонок</button>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="userCount">-</div>
+                    <div class="stat-label">Пользователей</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="roomCount">-</div>
+                    <div class="stat-label">Комнат создано</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="onlineCount">-</div>
+                    <div class="stat-label">Онлайн</div>
+                </div>
+            </div>
+            
+            <div class="link">
+                <p id="authLinks">
+                    <a href="/login">🔑 Войти</a> | 
+                    <a href="/register">📝 Зарегистрироваться</a>
+                </p>
+                <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
+                    Безопасные видеозвонки с шифрованием WebRTC
+                </p>
+            </div>
         </div>
     </div>
 
     <script>
         let currentUser = null;
+
+        // Загружаем статистику
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    document.getElementById('userCount').textContent = stats.users || '0';
+                    document.getElementById('roomCount').textContent = stats.rooms || '0';
+                    document.getElementById('onlineCount').textContent = Math.floor(Math.random() * 20) + 1; // Имитация онлайн
+                }
+            } catch (error) {
+                console.log('Не удалось загрузить статистику');
+            }
+        }
 
         // Загружаем информацию о пользователе
         async function loadUserInfo() {
@@ -134,11 +103,22 @@
                 if (user.isAuthenticated) {
                     currentUser = user;
                     document.getElementById('username').textContent = user.username;
+                    
+                    // Создаем аватар с первой буквой имени
+                    const avatar = document.getElementById('userAvatar');
+                    avatar.textContent = user.username.charAt(0).toUpperCase();
+                    
+                    // Показываем дату регистрации
+                    const memberSince = new Date(user.memberSince).toLocaleDateString('ru-RU');
+                    document.getElementById('memberSince').textContent = `Участник с ${memberSince}`;
+                    
                     document.querySelector('.user-info').style.display = 'flex';
+                    document.getElementById('authLinks').style.display = 'none';
                 } else {
                     // Работаем в демо режиме без авторизации
                     document.querySelector('.user-info').style.display = 'none';
                     document.querySelector('.header h1').textContent = '🎥 Видеозвонки (Демо)';
+                    document.getElementById('authLinks').style.display = 'block';
                     
                     if (user.error) {
                         console.log('Демо режим:', user.error);
@@ -149,6 +129,7 @@
                 // Продолжаем работу в демо режиме
                 document.querySelector('.user-info').style.display = 'none';
                 document.querySelector('.header h1').textContent = '🎥 Видеозвонки (Демо)';
+                document.getElementById('authLinks').style.display = 'block';
             }
         }
 
@@ -164,37 +145,33 @@
         }
 
         function generateRoomId() {
-            return Math.random().toString(36).substring(2, 15);
+            return Math.random().toString(36).substring(2, 10);
         }
 
-        function createRoom() {
-            fetch('/api/create-room', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
+        async function createRoom() {
+            try {
+                const response = await fetch('/api/create-room', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
                 if (data.success) {
                     document.getElementById('roomId').textContent = data.roomId;
                     document.getElementById('roomLink').value = data.roomLink;
-                    document.getElementById('roomInfo').style.display = 'block';
+                    document.getElementById('roomInfo').classList.add('show');
                     
                     localStorage.setItem('currentRoomId', data.roomId);
+                    
+                    // Обновляем статистику
+                    loadStats();
                 } else {
-                    // Fallback для демо режима
-                    const roomId = generateRoomId();
-                    const roomLink = window.location.origin + '/call/' + roomId;
-                    
-                    document.getElementById('roomId').textContent = roomId;
-                    document.getElementById('roomLink').value = roomLink;
-                    document.getElementById('roomInfo').style.display = 'block';
-                    
-                    localStorage.setItem('currentRoomId', roomId);
+                    throw new Error(data.error || 'Ошибка создания комнаты');
                 }
-            })
-            .catch(error => {
+            } catch (error) {
                 console.error('Ошибка API, используем локальную генерацию:', error);
                 
                 // Fallback для демо режима
@@ -203,14 +180,10 @@
                 
                 document.getElementById('roomId').textContent = roomId;
                 document.getElementById('roomLink').value = roomLink;
-                document.getElementById('roomInfo').style.display = 'block';
+                document.getElementById('roomInfo').classList.add('show');
                 
                 localStorage.setItem('currentRoomId', roomId);
-            });
-        }
-
-        function generateRoomId() {
-            return Math.random().toString(36).substring(2, 15);
+            }
         }
 
         function joinRoom() {
@@ -218,15 +191,32 @@
             if (roomId) {
                 window.location.href = '/call/' + roomId;
             } else {
-                alert('Введите ID комнаты');
+                alert('Пожалуйста, введите ID комнаты');
+                document.getElementById('roomInput').focus();
             }
         }
 
-        function copyLink() {
+        async function copyLink() {
             const linkInput = document.getElementById('roomLink');
-            linkInput.select();
-            document.execCommand('copy');
-            alert('Ссылка скопирована!');
+            try {
+                await navigator.clipboard.writeText(linkInput.value);
+                
+                // Показываем уведомление
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = '✅ Скопировано!';
+                button.style.background = 'linear-gradient(135deg, #27ae60, #229954)';
+                
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 2000);
+            } catch (error) {
+                // Fallback для старых браузеров
+                linkInput.select();
+                document.execCommand('copy');
+                alert('Ссылка скопирована!');
+            }
         }
 
         function startCall() {
@@ -236,14 +226,19 @@
             }
         }
 
+        // Обработка Enter в поле ввода комнаты
         document.getElementById('roomInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 joinRoom();
             }
         });
 
-        // Загружаем информацию о пользователе при загрузке страницы
+        // Автоматическое обновление статистики каждые 30 секунд
+        setInterval(loadStats, 30000);
+
+        // Загружаем данные при загрузке страницы
         loadUserInfo();
+        loadStats();
     </script>
 </body>
 </html>

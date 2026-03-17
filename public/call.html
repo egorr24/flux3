@@ -4,130 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Видеозвонок</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            background: #1a1a1a; 
-            color: white; 
-            font-family: Arial, sans-serif;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .header { 
-            padding: 1rem; 
-            background: rgba(0,0,0,0.5); 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-        }
-        .user-controls {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            font-size: 0.9rem;
-        }
-        .logout-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-        }
-        .logout-btn:hover {
-            background: #c82333;
-        }
-        .video-container { 
-            position: relative; 
-            height: calc(100vh - 140px); 
-            background: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #localVideo { 
-            position: absolute; 
-            top: 20px; 
-            right: 20px; 
-            width: 200px; 
-            height: 150px; 
-            border-radius: 8px; 
-            border: 2px solid #667eea;
-            z-index: 10;
-        }
-        #remoteVideo { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: cover;
-        }
-        .controls { 
-            padding: 1rem; 
-            background: rgba(0,0,0,0.8); 
-            display: flex; 
-            justify-content: center; 
-            gap: 1rem;
-        }
-        .control-btn { 
-            width: 50px; 
-            height: 50px; 
-            border-radius: 50%; 
-            border: none; 
-            font-size: 1.2rem; 
-            cursor: pointer; 
-            background: rgba(255,255,255,0.2); 
-            color: white;
-        }
-        .control-btn:hover { background: rgba(255,255,255,0.3); }
-        .control-btn.off { background: #dc3545; }
-        .control-btn.end { background: #dc3545; }
-        .notification { 
-            position: fixed; 
-            top: 20px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            background: #28a745; 
-            color: white; 
-            padding: 10px 20px; 
-            border-radius: 5px; 
-            z-index: 1000;
-            display: none;
-        }
-        .notification.error { background: #dc3545; }
-        .waiting { 
-            text-align: center; 
-            font-size: 1.2rem; 
-            opacity: 0.7;
-        }
-    </style>
+    <link rel="stylesheet" href="/style.css">
 </head>
-<body>
-    <div class="header">
+<body style="background: #1a1a1a; color: white; overflow: hidden;">
+    <div class="video-header">
         <div>
-            <h1>Видеозвонок</h1>
-            <span>Комната: <span id="roomId"></span></span>
+            <h1 style="margin: 0; font-size: 1.5rem;">🎥 Видеозвонок</h1>
+            <span style="font-size: 0.9rem; opacity: 0.8;">Комната: <code id="roomId" style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;"></code></span>
         </div>
-        <div class="user-controls">
+        <div class="user-info" style="color: white;">
             <span id="currentUser"></span>
-            <button onclick="logout()" class="logout-btn">Выйти</button>
+            <button onclick="logout()" class="btn-danger btn-small">Выйти</button>
         </div>
     </div>
 
     <div class="video-container">
         <video id="localVideo" autoplay muted playsinline></video>
         <video id="remoteVideo" autoplay playsinline style="display: none;"></video>
-        <div id="waiting" class="waiting">Ожидание подключения...</div>
+        <div id="waiting" class="waiting">
+            <div style="margin-bottom: 1rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">📹</div>
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">Ожидание подключения...</div>
+                <div style="font-size: 1rem; opacity: 0.7;">Поделитесь ссылкой с друзьями для начала звонка</div>
+            </div>
+        </div>
     </div>
 
     <div class="controls">
         <button id="videoBtn" class="control-btn" title="Камера">📹</button>
         <button id="audioBtn" class="control-btn" title="Микрофон">🎤</button>
-        <button id="shareBtn" class="control-btn" title="Экран">🖥️</button>
-        <button id="copyBtn" class="control-btn" title="Ссылка">🔗</button>
-        <button id="endBtn" class="control-btn end" title="Завершить">📞</button>
+        <button id="shareBtn" class="control-btn" title="Демонстрация экрана">🖥️</button>
+        <button id="copyBtn" class="control-btn" title="Скопировать ссылку">🔗</button>
+        <button id="endBtn" class="control-btn end" title="Завершить звонок">📞</button>
     </div>
 
-    <div id="notification" class="notification"></div>
+    <div id="notification" class="fixed-notification"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -143,7 +54,8 @@
         // WebRTC конфигурация
         const config = {
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
             ]
         };
 
@@ -161,21 +73,21 @@
                     
                     if (user.isAuthenticated) {
                         document.getElementById('currentUser').textContent = user.username;
-                        document.querySelector('.user-controls').style.display = 'flex';
+                        document.querySelector('.user-info').style.display = 'flex';
                     } else {
                         document.getElementById('currentUser').textContent = 'Гость';
-                        document.querySelector('.user-controls').style.display = 'none';
+                        document.querySelector('.user-info').style.display = 'none';
                     }
                 } catch (error) {
                     console.log('Работаем в демо режиме');
                     document.getElementById('currentUser').textContent = 'Демо';
-                    document.querySelector('.user-controls').style.display = 'none';
+                    document.querySelector('.user-info').style.display = 'none';
                 }
 
                 // Получаем доступ к камере и микрофону
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true
+                    video: { width: 1280, height: 720 },
+                    audio: { echoCancellation: true, noiseSuppression: true }
                 });
                 
                 document.getElementById('localVideo').srcObject = localStream;
@@ -190,11 +102,11 @@
                 setupSocketEvents();
                 setupControls();
                 
-                showNotification('Подключено к комнате');
+                showNotification('🎉 Подключено к комнате! Поделитесь ссылкой для начала звонка.', 'success');
                 
             } catch (error) {
                 console.error('Ошибка:', error);
-                showNotification('Ошибка доступа к камере/микрофону', 'error');
+                showNotification('❌ Ошибка доступа к камере/микрофону. Проверьте разрешения браузера.', 'error');
             }
         }
 
@@ -213,13 +125,13 @@
         function setupSocketEvents() {
             socket.on('user-connected', async (userId) => {
                 console.log('Пользователь подключился:', userId);
-                showNotification('Пользователь присоединился');
+                showNotification('👤 Пользователь присоединился к звонку!', 'success');
                 await createPeerConnection(userId, true);
             });
 
             socket.on('user-disconnected', (userId) => {
                 console.log('Пользователь отключился:', userId);
-                showNotification('Пользователь покинул звонок');
+                showNotification('👋 Пользователь покинул звонок', 'warning');
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('waiting').style.display = 'block';
                 if (peerConnection) {
@@ -263,6 +175,7 @@
                 remoteVideo.srcObject = remoteStream;
                 remoteVideo.style.display = 'block';
                 document.getElementById('waiting').style.display = 'none';
+                showNotification('🎥 Видеосвязь установлена!', 'success');
             };
 
             // Обрабатываем ICE кандидатов
@@ -330,6 +243,10 @@
             
             const btn = document.getElementById('videoBtn');
             btn.classList.toggle('off', !isVideoOn);
+            btn.textContent = isVideoOn ? '📹' : '📹';
+            btn.style.opacity = isVideoOn ? '1' : '0.5';
+            
+            showNotification(isVideoOn ? '📹 Камера включена' : '📹 Камера выключена', 'success');
         }
 
         // Переключение аудио
@@ -339,13 +256,18 @@
             
             const btn = document.getElementById('audioBtn');
             btn.classList.toggle('off', !isAudioOn);
+            btn.textContent = isAudioOn ? '🎤' : '🔇';
+            btn.style.opacity = isAudioOn ? '1' : '0.5';
+            
+            showNotification(isAudioOn ? '🎤 Микрофон включен' : '🔇 Микрофон выключен', 'success');
         }
 
         // Демонстрация экрана
         async function shareScreen() {
             try {
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true
+                    video: true,
+                    audio: true
                 });
                 
                 const videoTrack = screenStream.getVideoTracks()[0];
@@ -358,52 +280,81 @@
                 }
                 
                 document.getElementById('localVideo').srcObject = screenStream;
+                showNotification('🖥️ Демонстрация экрана начата', 'success');
                 
                 videoTrack.onended = () => {
                     document.getElementById('localVideo').srcObject = localStream;
                     if (sender) {
                         sender.replaceTrack(localStream.getVideoTracks()[0]);
                     }
+                    showNotification('🖥️ Демонстрация экрана завершена', 'success');
                 };
                 
             } catch (error) {
                 console.error('Ошибка демонстрации экрана:', error);
+                showNotification('❌ Ошибка демонстрации экрана', 'error');
             }
         }
 
         // Копирование ссылки
-        function copyLink() {
+        async function copyLink() {
             const link = window.location.href;
-            navigator.clipboard.writeText(link).then(() => {
-                showNotification('Ссылка скопирована');
-            });
+            try {
+                await navigator.clipboard.writeText(link);
+                showNotification('🔗 Ссылка скопирована в буфер обмена!', 'success');
+            } catch (error) {
+                // Fallback для старых браузеров
+                const textArea = document.createElement('textarea');
+                textArea.value = link;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showNotification('🔗 Ссылка скопирована!', 'success');
+            }
         }
 
         // Завершение звонка
         function endCall() {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
+            if (confirm('Завершить звонок?')) {
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+                if (peerConnection) {
+                    peerConnection.close();
+                }
+                if (socket) {
+                    socket.disconnect();
+                }
+                window.location.href = '/';
             }
-            if (peerConnection) {
-                peerConnection.close();
-            }
-            if (socket) {
-                socket.disconnect();
-            }
-            window.location.href = '/';
         }
 
         // Показ уведомлений
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
             notification.textContent = message;
-            notification.className = `notification ${type}`;
-            notification.style.display = 'block';
+            notification.className = `fixed-notification notification ${type} show`;
             
             setTimeout(() => {
-                notification.style.display = 'none';
-            }, 3000);
+                notification.classList.remove('show');
+            }, 4000);
         }
+
+        // Обработка горячих клавиш
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyM') {
+                toggleAudio();
+            } else if (e.code === 'KeyV') {
+                toggleVideo();
+            } else if (e.code === 'KeyS') {
+                shareScreen();
+            } else if (e.code === 'KeyC') {
+                copyLink();
+            } else if (e.code === 'Escape') {
+                endCall();
+            }
+        });
 
         // Запуск приложения
         init();
