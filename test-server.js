@@ -1,53 +1,22 @@
+// Простой тест сервера для Railway
 const express = require('express');
-const path = require('path');
-
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3000;
 
-// Логирование всех запросов
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
-  next();
+// Healthcheck для Railway
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
 });
 
-// Статические файлы с явными MIME типами
-app.use('/public', express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, filePath) => {
-    console.log('Serving file:', filePath);
-    if (filePath.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    } else if (filePath.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css; charset=utf-8');
-    } else if (filePath.endsWith('.html')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    }
-  }
-}));
-
-// Тестовый маршрут для проверки JS файла
-app.get('/test-js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.send('console.log("JavaScript файл загружен успешно!");');
-});
-
-// Главная страница
 app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Тест</title>
-    </head>
-    <body>
-        <h1>Тест загрузки JavaScript</h1>
-        <p>Откройте консоль браузера</p>
-        <script src="/test-js"></script>
-        <script src="/public/call.js"></script>
-    </body>
-    </html>
-  `);
+    res.send('Server is running! ✅');
 });
 
-app.listen(PORT, () => {
-  console.log(`Тестовый сервер запущен на http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Test server running on port ${PORT}`);
+    console.log(`🏥 Healthcheck: http://localhost:${PORT}/health`);
 });
