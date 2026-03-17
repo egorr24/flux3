@@ -21,8 +21,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// HEALTHCHECK ДЛЯ RAILWAY - РАБОТАЕТ ВСЕГДА!
+// HEALTHCHECK ДЛЯ RAILWAY - МАКСИМАЛЬНО ПРОСТОЙ!
 app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+app.get('/healthcheck', (req, res) => {
     res.status(200).json({ 
         status: 'OK', 
         timestamp: new Date().toISOString(),
@@ -100,7 +104,9 @@ async function connectToPostgreSQL() {
                 tableName: 'session'
             });
             
-            // Обновляем middleware сессий
+            console.log('✅ PostgreSQL Store для сессий настроен');
+            
+            // Обновляем middleware сессий с PostgreSQL Store
             app.use(session({
                 store: sessionStore,
                 secret: SESSION_SECRET,
@@ -113,9 +119,11 @@ async function connectToPostgreSQL() {
                 }
             }));
             
-            console.log('✅ PostgreSQL Store для сессий настроен');
+            console.log('✅ Сессии переключены на PostgreSQL Store');
+            
         } catch (storeError) {
             console.log('⚠️  Ошибка настройки PostgreSQL Store:', storeError.message);
+            console.log('💡 Используем MemoryStore (только для разработки)');
         }
         
         return true;
@@ -135,7 +143,7 @@ async function createTables() {
     try {
         console.log('🏗️  Создание таблиц PostgreSQL...');
         
-        // Таблица пользователей
+        // Таблица пользователей (сначала)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -147,24 +155,24 @@ async function createTables() {
             )
         `);
         
-        // Создаем индексы
+        // Создаем индексы для users
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
         
         console.log('✅ Таблица users создана/проверена');
         
-        // Таблица комнат
+        // Таблица комнат (после users, БЕЗ внешнего ключа для простоты)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS rooms (
                 id SERIAL PRIMARY KEY,
                 room_id VARCHAR(50) UNIQUE NOT NULL,
-                creator_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                creator_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT TRUE
             )
         `);
         
-        // Создаем индексы для комнат
+        // Создаем индексы для rooms
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_rooms_room_id ON rooms(room_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_rooms_creator ON rooms(creator_id)`);
         
@@ -181,7 +189,7 @@ async function createTables() {
         
     } catch (error) {
         console.error('❌ Ошибка создания таблиц:', error.message);
-        console.log('💡 Возможно нет прав на создание таблиц');
+        console.log('💡 Продолжаем работу без некоторых таблиц');
     }
 }
 
@@ -427,6 +435,10 @@ app.get('/register', (req, res) => {
 
 app.get('/call/:roomId', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'call.html'));
+});
+
+app.get('/test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'test-app.html'));
 });
 
 // Socket.IO для видеозвонков

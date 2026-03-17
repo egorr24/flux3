@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест приложения</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест приложения видеозвонков</h1>
+    
+    <div class="test">
+        <h3>1. Тест healthcheck</h3>
+        <button onclick="testHealth()">Проверить /health</button>
+        <div id="healthResult"></div>
+    </div>
+    
+    <div class="test">
+        <h3>2. Тест регистрации</h3>
+        <input type="text" id="regUsername" placeholder="Имя пользователя" value="testuser">
+        <input type="email" id="regEmail" placeholder="Email" value="test@example.com">
+        <input type="password" id="regPassword" placeholder="Пароль" value="123456">
+        <button onclick="testRegister()">Зарегистрироваться</button>
+        <div id="registerResult"></div>
+    </div>
+    
+    <div class="test">
+        <h3>3. Тест входа</h3>
+        <input type="email" id="loginEmail" placeholder="Email" value="test@example.com">
+        <input type="password" id="loginPassword" placeholder="Пароль" value="123456">
+        <button onclick="testLogin()">Войти</button>
+        <div id="loginResult"></div>
+    </div>
+    
+    <div class="test">
+        <h3>4. Тест создания комнаты</h3>
+        <button onclick="testCreateRoom()">Создать комнату</button>
+        <div id="roomResult"></div>
+    </div>
+    
+    <div class="test">
+        <h3>5. Тест получения пользователя</h3>
+        <button onclick="testGetUser()">Получить данные пользователя</button>
+        <div id="userResult"></div>
+    </div>
+
+    <script>
+        async function testHealth() {
+            try {
+                const response = await fetch('/health');
+                const result = await response.text();
+                document.getElementById('healthResult').innerHTML = 
+                    `<div class="success">✅ Healthcheck работает: ${result}</div>`;
+            } catch (error) {
+                document.getElementById('healthResult').innerHTML = 
+                    `<div class="error">❌ Ошибка healthcheck: ${error.message}</div>`;
+            }
+        }
+
+        async function testRegister() {
+            try {
+                const data = {
+                    username: document.getElementById('regUsername').value,
+                    email: document.getElementById('regEmail').value,
+                    password: document.getElementById('regPassword').value,
+                    confirmPassword: document.getElementById('regPassword').value
+                };
+                
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('registerResult').innerHTML = 
+                        `<div class="success">✅ Регистрация успешна: ${result.message}</div>`;
+                } else {
+                    document.getElementById('registerResult').innerHTML = 
+                        `<div class="error">❌ Ошибка регистрации: ${result.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('registerResult').innerHTML = 
+                    `<div class="error">❌ Ошибка: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogin() {
+            try {
+                const data = {
+                    email: document.getElementById('loginEmail').value,
+                    password: document.getElementById('loginPassword').value
+                };
+                
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('loginResult').innerHTML = 
+                        `<div class="success">✅ Вход успешен: ${result.message}</div>`;
+                } else {
+                    document.getElementById('loginResult').innerHTML = 
+                        `<div class="error">❌ Ошибка входа: ${result.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('loginResult').innerHTML = 
+                    `<div class="error">❌ Ошибка: ${error.message}</div>`;
+            }
+        }
+
+        async function testCreateRoom() {
+            try {
+                const response = await fetch('/api/create-room', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('roomResult').innerHTML = 
+                        `<div class="success">✅ Комната создана: ${result.roomId}<br>
+                        Ссылка: <a href="${result.roomLink}" target="_blank">${result.roomLink}</a></div>`;
+                } else {
+                    document.getElementById('roomResult').innerHTML = 
+                        `<div class="error">❌ Ошибка создания комнаты: ${result.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('roomResult').innerHTML = 
+                    `<div class="error">❌ Ошибка: ${error.message}</div>`;
+            }
+        }
+
+        async function testGetUser() {
+            try {
+                const response = await fetch('/api/user');
+                const result = await response.json();
+                
+                if (result.isAuthenticated) {
+                    document.getElementById('userResult').innerHTML = 
+                        `<div class="success">✅ Пользователь: ${result.username} (${result.email})<br>
+                        Зарегистрирован: ${new Date(result.memberSince).toLocaleString()}</div>`;
+                } else {
+                    document.getElementById('userResult').innerHTML = 
+                        `<div class="error">❌ Не авторизован: ${result.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('userResult').innerHTML = 
+                    `<div class="error">❌ Ошибка: ${error.message}</div>`;
+            }
+        }
+
+        // Автоматический тест healthcheck при загрузке
+        window.onload = () => {
+            testHealth();
+        };
+    </script>
+</body>
+</html>
