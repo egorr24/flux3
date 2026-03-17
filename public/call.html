@@ -51,6 +51,15 @@
     <div id="notification" class="notification hidden"></div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="call.js"></script>
+    <script>
+        // Проверка загрузки Socket.IO
+        if (typeof io === 'undefined') {
+            console.error('Socket.IO не загружен!');
+            document.body.innerHTML += '<div style="position:fixed;top:0;left:0;background:red;color:white;padding:10px;z-index:9999;">Ошибка: Socket.IO не загружен</div>';
+        } else {
+            console.log('Socket.IO загружен успешно');
+        }
+    </script>
+    <script type="text/javascript" src="call.js" onerror="console.error('Ошибка загрузки call.js'); document.body.innerHTML += '<div style=\'position:fixed;top:50px;left:0;background:red;color:white;padding:10px;z-index:9999;\'>Ошибка загрузки call.js</div>';"></script>
 </body>
 </html>

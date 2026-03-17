@@ -22,25 +22,58 @@ app.use((req, res, next) => {
   next();
 });
 
-// Статические файлы с правильными MIME типами
+// Middleware для отключения кэширования в разработке
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    next();
+  });
+}
+
+// Статические файлы - ВАЖНО: должно быть ПЕРЕД маршрутами HTML
 app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, path) => {
-    if (path.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript');
-    } else if (path.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
+  setHeaders: (res, filePath) => {
+    console.log('Отдаем статический файл:', filePath);
+    
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    } else if (filePath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    } else if (filePath.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
     }
   }
 }));
 
-// Главная страница
+// API маршруты (если понадобятся)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Тестовая страница для отладки
+app.get('/test', (req, res) => {
+  console.log('Отдаем тестовую страницу');
+  res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
+// HTML маршруты - ПОСЛЕ статических файлов
+app.get('/call/:roomId', (req, res) => {
+  console.log('Отдаем страницу звонка для комнаты:', req.params.roomId);
+  res.sendFile(path.join(__dirname, 'public', 'call.html'));
+});
+
+// Главная страница - ПОСЛЕДНЕЙ
 app.get('/', (req, res) => {
+  console.log('Отдаем главную страницу');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Страница звонка
-app.get('/call/:roomId', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'call.html'));
+// Обработка 404
+app.use((req, res) => {
+  console.log('404 - Не найден:', req.url);
+  res.status(404).send('Страница не найдена');
 });
 
 // Хранилище активных комнат
@@ -107,4 +140,5 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
+  console.log(`Откройте http://localhost:${PORT} для тестирования`);
 });
