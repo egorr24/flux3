@@ -13,190 +13,102 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Настройка PostgreSQL с автоматическим поиском переменных
-function getDatabaseUrl() {
-  // Список возможных переменных для PostgreSQL на Railway
-  const possibleVars = [
-    'DATABASE_URL',
-    'POSTGRES_URL', 
-    'POSTGRESQL_URL',
-    'DB_URL',
-    'PGURL',
-    // Railway специфичные переменные
-    'POSTGRES_DATABASE_URL',
-    'RAILWAY_POSTGRES_URL',
-    // Отдельные компоненты для сборки URL
-    process.env.PGHOST && process.env.PGDATABASE ? 
-      `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT || 5432}/${process.env.PGDATABASE}` : null
-  ];
+// Простая настройка PostgreSQL - работает без базы по умолчанию
+let pool = null;
+let isDatabaseConnected = false;
 
-  for (const varName of possibleVars) {
-    if (typeof varName === 'string' && process.env[varName]) {
-      console.log(`✅ Найдена переменная базы данных: ${varName}`);
-      return process.env[varName];
-    } else if (varName && typeof varName !== 'string') {
-      console.log(`✅ Собран URL из компонентов PostgreSQL`);
-      return varName;
-    }
-  }
-
-  console.log('⚠️  Переменные PostgreSQL не найдены, проверьте:');
-  console.log('   - DATABASE_URL');
-  console.log('   - POSTGRES_URL');
-  console.log('   - Или настройте переменную в Railway Dashboard');
+// Пытаемся подключиться к базе данных если есть URL
+async function initPostgreSQL() {
+  const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   
-  return 'postgresql://localhost:5432/videocalls'; // fallback для локальной разработки
-}
+  if (!dbUrl) {
+    console.log('📝 База данных не настроена - работаем в демо режиме');
+    console.log('💡 Для подключения PostgreSQL добавьте переменную DATABASE_URL');
+    return false;
+  }
 
-const databaseUrl = getDatabaseUrl();
-console.log(`🔗 Используем базу данных: ${databaseUrl.replace(/:[^:@]*@/, ':***@')}`); // скрываем пароль в логах
-
-const pool = new Pool({
-  connectionString: databaseUrl,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Настройки для стабильности соединения
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  // Дополнительные настройки для Railway
-  statement_timeout: 30000,
-  query_timeout: 30000,
-});
-
-// Проверка подключения к базе данных с детальной диагностикой
-async function testDatabaseConnection() {
   try {
-    console.log('🔄 Тестирование подключения к PostgreSQL...');
-    
+    const { Pool } = require('pg');
+    pool = new Pool({
+      connectionString: dbUrl,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+
+    // Тестируем подключение
     const client = await pool.connect();
-    const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
+    await client.query('SELECT NOW()');
     client.release();
+
+    // Создаем таблицы
+    await createTables();
     
-    console.log('✅ Подключение к PostgreSQL успешно');
-    console.log(`📅 Время сервера: ${result.rows[0].current_time}`);
-    console.log(`🐘 Версия PostgreSQL: ${result.rows[0].pg_version.split(' ')[0]} ${result.rows[0].pg_version.split(' ')[1]}`);
-    
+    console.log('✅ PostgreSQL подключен успешно');
     return true;
   } catch (error) {
-    console.error('❌ Ошибка подключения к PostgreSQL:');
-    console.error(`   Код ошибки: ${error.code}`);
-    console.error(`   Сообщение: ${error.message}`);
-    
-    if (error.code === 'ENOTFOUND') {
-      console.error('   🔍 Проблема: Хост базы данных не найден');
-      console.error('   💡 Решение: Проверьте DATABASE_URL в переменных окружения');
-    } else if (error.code === 'ECONNREFUSED') {
-      console.error('   🔍 Проблема: Соединение отклонено');
-      console.error('   💡 Решение: Убедитесь что PostgreSQL сервис запущен на Railway');
-    } else if (error.code === '28P01') {
-      console.error('   🔍 Проблема: Неверные учетные данные');
-      console.error('   💡 Решение: Проверьте пользователя и пароль в DATABASE_URL');
-    } else if (error.code === '3D000') {
-      console.error('   🔍 Проблема: База данных не существует');
-      console.error('   💡 Решение: Создайте базу данных или проверьте название в URL');
-    }
-    
-    console.error('   📋 Доступные переменные окружения:');
-    Object.keys(process.env)
-      .filter(key => key.includes('PG') || key.includes('POSTGRES') || key.includes('DATABASE'))
-      .forEach(key => {
-        const value = process.env[key];
-        const maskedValue = value && value.includes('://') ? 
-          value.replace(/:[^:@]*@/, ':***@') : value;
-        console.error(`      ${key}=${maskedValue}`);
-      });
-    
+    console.log('❌ Ошибка PostgreSQL:', error.message);
+    console.log('📝 Продолжаем работу в демо режиме');
+    pool = null;
     return false;
   }
 }
 
-// Инициализация базы данных с детальным логированием
-async function initDatabase() {
-  try {
-    console.log('🔄 Инициализация базы данных...');
-    
-    // Проверяем подключение
-    const isConnected = await testDatabaseConnection();
-    if (!isConnected) {
-      console.log('⚠️  База данных недоступна, запускаем без БД (демо режим)');
-      console.log('');
-      console.log('📋 Инструкция для подключения PostgreSQL на Railway:');
-      console.log('   1. Откройте ваш проект на railway.app');
-      console.log('   2. Нажмите "Add Service" → "Database" → "PostgreSQL"');
-      console.log('   3. В настройках вашего основного сервиса добавьте переменную:');
-      console.log('      Имя: DATABASE_URL');
-      console.log('      Значение: ${{ Postgres.DATABASE_URL }}');
-      console.log('   4. Перезапустите сервис');
-      console.log('');
-      return false;
-    }
+// Создание таблиц
+async function createTables() {
+  if (!pool) return;
 
-    console.log('🏗️  Создание таблиц...');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-    // Создаем таблицу пользователей
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    console.log('✅ Таблица users создана/проверена');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS session (
+      sid VARCHAR NOT NULL PRIMARY KEY,
+      sess JSON NOT NULL,
+      expire TIMESTAMP(6) NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS IDX_session_expire ON session(expire);
+  `);
 
-    // Создаем таблицу сессий
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS session (
-        sid VARCHAR NOT NULL COLLATE "default",
-        sess JSON NOT NULL,
-        expire TIMESTAMP(6) NOT NULL
-      )
-      WITH (OIDS=FALSE);
-      
-      ALTER TABLE session DROP CONSTRAINT IF EXISTS session_pkey;
-      ALTER TABLE session ADD CONSTRAINT session_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE;
-      
-      CREATE INDEX IF NOT EXISTS IDX_session_expire ON session(expire);
-    `);
-    console.log('✅ Таблица session создана/проверена');
-
-    // Создаем таблицу комнат
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS rooms (
-        id SERIAL PRIMARY KEY,
-        room_id VARCHAR(50) UNIQUE NOT NULL,
-        created_by INTEGER REFERENCES users(id),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        ended_at TIMESTAMP NULL
-      )
-    `);
-    console.log('✅ Таблица rooms создана/проверена');
-
-    // Проверяем количество пользователей
-    const userCount = await pool.query('SELECT COUNT(*) as count FROM users');
-    console.log(`👥 Пользователей в базе: ${userCount.rows[0].count}`);
-
-    console.log('✅ База данных инициализирована успешно');
-    return true;
-  } catch (error) {
-    console.error('❌ Ошибка инициализации базы данных:');
-    console.error(`   ${error.message}`);
-    console.log('⚠️  Запускаем без БД (демо режим)');
-    return false;
-  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id SERIAL PRIMARY KEY,
+      room_id VARCHAR(50) UNIQUE NOT NULL,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 }
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Глобальная переменная для отслеживания состояния БД
-let isDatabaseConnected = false;
+// Простые сессии в памяти (работает всегда)
+const memoryStore = new Map();
 
-// Настройка сессий (будет настроено после проверки БД)
-let sessionMiddleware;
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'demo-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: false, // Railway автоматически обрабатывает HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 часа
+  },
+  // Используем память если нет PostgreSQL
+  store: isDatabaseConnected && pool ? new (require('connect-pg-simple')(session))({
+    pool: pool,
+    tableName: 'session'
+  }) : undefined
+}));
 
 // Хранилище активных комнат (в памяти для WebRTC)
 const activeRooms = {};
