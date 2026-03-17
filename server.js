@@ -39,8 +39,18 @@ app.get('/ping', (req, res) => {
     res.status(200).send('pong');
 });
 
+// Проверка готовности базы данных
+app.get('/api/db-status', (req, res) => {
+    res.json({
+        connected: !!pool,
+        ready: dbReady,
+        status: dbReady ? 'ready' : (pool ? 'connecting' : 'disconnected')
+    });
+});
+
 // Глобальные переменные для базы данных
 let pool = null;
+let dbReady = false;
 
 // Функция подключения к PostgreSQL (СИНХРОННАЯ ИНИЦИАЛИЗАЦИЯ)
 async function initializeDatabase() {
@@ -125,6 +135,9 @@ async function createTables() {
         
         console.log('✅ База данных PostgreSQL инициализирована успешно');
         
+        // Помечаем базу данных как готовую
+        dbReady = true;
+        
     } catch (error) {
         console.error('❌ Ошибка создания таблиц:', error.message);
         console.log('💡 Продолжаем работу без некоторых таблиц');
@@ -200,7 +213,7 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ error: 'Неверный формат email' });
         }
         
-        if (!pool) {
+        if (!pool || !dbReady) {
             return res.status(500).json({ error: 'База данных недоступна. Попробуйте позже.' });
         }
         
@@ -255,7 +268,7 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ error: 'Email и пароль обязательны' });
         }
         
-        if (!pool) {
+        if (!pool || !dbReady) {
             return res.status(500).json({ error: 'База данных недоступна. Попробуйте позже.' });
         }
         
@@ -324,7 +337,7 @@ app.get('/api/user', async (req, res) => {
             });
         }
         
-        if (!pool) {
+        if (!pool || !dbReady) {
             return res.json({ 
                 isAuthenticated: false, 
                 error: 'База данных недоступна' 
@@ -400,7 +413,7 @@ app.post('/api/create-room', async (req, res) => {
 // Статистика
 app.get('/api/stats', async (req, res) => {
     try {
-        if (!pool) {
+        if (!pool || !dbReady) {
             return res.json({ users: 0, rooms: 0 });
         }
         
@@ -440,6 +453,10 @@ app.get('/call/:roomId', (req, res) => {
 
 app.get('/test', (req, res) => {
     res.sendFile(path.join(__dirname, 'test-app.html'));
+});
+
+app.get('/status', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'status.html'));
 });
 
 // Socket.IO для видеозвонков
@@ -509,6 +526,7 @@ async function startServer() {
         console.log(`✅ Сервер запущен на порту ${PORT}`);
         console.log(`🌐 Локальный адрес: http://localhost:${PORT}`);
         console.log(`🏥 Healthcheck: http://localhost:${PORT}/health`);
+        console.log(`🔍 Статус системы: http://localhost:${PORT}/status`);
         
         if (process.env.RAILWAY_STATIC_URL) {
             console.log(`🚂 Railway URL: ${process.env.RAILWAY_STATIC_URL}`);
@@ -522,15 +540,19 @@ async function startServer() {
         console.log('   GET  /register - Страница регистрации');
         console.log('   GET  /call/:roomId - Страница видеозвонка');
         console.log('   GET  /test - Тестовая страница');
+        console.log('   GET  /status - Статус системы');
         console.log('   POST /api/register - API регистрации');
         console.log('   POST /api/login - API входа');
         console.log('   POST /api/logout - API выхода');
         console.log('   GET  /api/user - Информация о пользователе');
         console.log('   POST /api/create-room - Создание комнаты');
         console.log('   GET  /api/stats - Статистика');
+        console.log('   GET  /api/db-status - Статус базы данных');
         
-        if (dbConnected) {
+        if (dbConnected && dbReady) {
             console.log('💾 База данных: PostgreSQL готова к работе');
+        } else if (dbConnected) {
+            console.log('⏳ База данных: PostgreSQL подключается...');
         } else {
             console.log('⚠️  База данных: работаем в демо режиме');
         }

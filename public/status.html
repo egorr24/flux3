@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статус системы</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="center-screen">
+        <div class="container">
+            <h1>🔍 Статус системы</h1>
+            
+            <div class="card">
+                <h2>База данных PostgreSQL</h2>
+                <div id="dbStatus">Проверка...</div>
+            </div>
+            
+            <div class="card">
+                <h2>Статистика</h2>
+                <div id="stats">Загрузка...</div>
+            </div>
+            
+            <div class="card">
+                <h2>Тест API</h2>
+                <button onclick="testAPI()" class="btn-secondary">Тестировать все API</button>
+                <div id="apiResults" style="margin-top: 1rem;"></div>
+            </div>
+            
+            <div class="link">
+                <a href="/">← Вернуться на главную</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function checkDBStatus() {
+            try {
+                const response = await fetch('/api/db-status');
+                const status = await response.json();
+                
+                const statusDiv = document.getElementById('dbStatus');
+                
+                if (status.ready) {
+                    statusDiv.innerHTML = `
+                        <div class="notification success show">
+                            ✅ База данных готова к работе<br>
+                            Статус: ${status.status}
+                        </div>
+                    `;
+                } else if (status.connected) {
+                    statusDiv.innerHTML = `
+                        <div class="notification warning show">
+                            ⏳ База данных подключается...<br>
+                            Статус: ${status.status}
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="notification error show">
+                            ❌ База данных недоступна<br>
+                            Статус: ${status.status}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('dbStatus').innerHTML = `
+                    <div class="notification error show">
+                        ❌ Ошибка проверки: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                
+                document.getElementById('stats').innerHTML = `
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="stat-number">${stats.users}</div>
+                            <div class="stat-label">Пользователей</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number">${stats.rooms}</div>
+                            <div class="stat-label">Комнат</div>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('stats').innerHTML = `
+                    <div class="notification error show">
+                        ❌ Ошибка загрузки статистики: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testAPI() {
+            const resultsDiv = document.getElementById('apiResults');
+            resultsDiv.innerHTML = '<div class="loading show"><div class="spinner"></div><p>Тестирование API...</p></div>';
+            
+            const tests = [
+                { name: 'Healthcheck', url: '/health', method: 'GET' },
+                { name: 'Статус БД', url: '/api/db-status', method: 'GET' },
+                { name: 'Статистика', url: '/api/stats', method: 'GET' },
+                { name: 'Пользователь', url: '/api/user', method: 'GET' }
+            ];
+            
+            let results = '<h3>Результаты тестов:</h3>';
+            
+            for (const test of tests) {
+                try {
+                    const response = await fetch(test.url, { method: test.method });
+                    const status = response.ok ? '✅' : '❌';
+                    results += `<div>${status} ${test.name}: ${response.status}</div>`;
+                } catch (error) {
+                    results += `<div>❌ ${test.name}: Ошибка - ${error.message}</div>`;
+                }
+            }
+            
+            resultsDiv.innerHTML = results;
+        }
+
+        // Автоматическое обновление каждые 5 секунд
+        function autoUpdate() {
+            checkDBStatus();
+            loadStats();
+        }
+
+        // Запуск при загрузке
+        autoUpdate();
+        
+        // Обновление каждые 5 секунд
+        setInterval(autoUpdate, 5000);
+    </script>
+</body>
+</html>
