@@ -3,6 +3,41 @@ function generateRoomId() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
+// Проверка поддержки WebRTC и разрешений
+async function checkMediaPermissions() {
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('WebRTC не поддерживается в этом браузере');
+        }
+
+        // Проверяем текущие разрешения
+        const permissions = await navigator.permissions.query({ name: 'camera' });
+        const audioPermissions = await navigator.permissions.query({ name: 'microphone' });
+        
+        if (permissions.state === 'denied' || audioPermissions.state === 'denied') {
+            showPermissionWarning();
+        }
+        
+        return true;
+    } catch (error) {
+        console.log('Не удалось проверить разрешения:', error);
+        return true; // Продолжаем работу, проверим при создании звонка
+    }
+}
+
+// Показ предупреждения о разрешениях
+function showPermissionWarning() {
+    const warning = document.createElement('div');
+    warning.className = 'permission-warning';
+    warning.innerHTML = `
+        <h3>⚠️ Требуются разрешения</h3>
+        <p>Для видеозвонков необходим доступ к камере и микрофону. Разрешите доступ в настройках браузера.</p>
+        <button onclick="this.parentElement.remove()" class="btn btn-secondary">Понятно</button>
+    `;
+    
+    document.querySelector('.container').insertBefore(warning, document.querySelector('main'));
+}
+
 // Элементы DOM
 const createRoomBtn = document.getElementById('createRoom');
 const joinRoomBtn = document.getElementById('joinRoom');
@@ -68,4 +103,9 @@ startCallBtn.addEventListener('click', () => {
     if (roomId) {
         window.location.href = `/call/${roomId}`;
     }
+});
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+    checkMediaPermissions();
 });

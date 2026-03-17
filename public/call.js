@@ -6,7 +6,7 @@ const configuration = {
     ]
 };
 
-// Глобальные перемены
+// Глобальные переменные
 let socket;
 let localStream;
 let peers = {};
@@ -14,35 +14,82 @@ let roomId;
 let isVideoEnabled = true;
 let isAudioEnabled = true;
 
-// DOM элементы
-const localVideo = document.getElementById('localVideo');
-const remoteVideos = document.getElementById('remoteVideos');
-const currentRoomIdSpan = document.getElementById('currentRoomId');
-const toggleVideoBtn = document.getElementById('toggleVideo');
-const toggleAudioBtn = document.getElementById('toggleAudio');
-const shareScreenBtn = document.getElementById('shareScreen');
-const copyRoomLinkBtn = document.getElementById('copyRoomLink');
-const endCallBtn = document.getElementById('endCall');
-const participantCount = document.getElementById('participantCount');
-const participantList = document.getElementById('participantList');
+// DOM элементы - будут инициализированы после загрузки DOM
+let localVideo;
+let remoteVideos;
+let currentRoomIdSpan;
+let toggleVideoBtn;
+let toggleAudioBtn;
+let shareScreenBtn;
+let copyRoomLinkBtn;
+let endCallBtn;
+let participantCount;
+let participantList;
 
-// Получение ID комнаты из URL
-roomId = window.location.pathname.split('/call/')[1];
-currentRoomIdSpan.textContent = roomId;
+// Инициализация DOM элементов
+function initDOMElements() {
+    localVideo = document.getElementById('localVideo');
+    remoteVideos = document.getElementById('remoteVideos');
+    currentRoomIdSpan = document.getElementById('currentRoomId');
+    toggleVideoBtn = document.getElementById('toggleVideo');
+    toggleAudioBtn = document.getElementById('toggleAudio');
+    shareScreenBtn = document.getElementById('shareScreen');
+    copyRoomLinkBtn = document.getElementById('copyRoomLink');
+    endCallBtn = document.getElementById('endCall');
+    participantCount = document.getElementById('participantCount');
+    participantList = document.getElementById('participantList');
+}
 
 // Инициализация
 async function init() {
     try {
-        // Получение медиа потока
+        // Проверяем поддержку WebRTC
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('WebRTC не поддерживается в этом браузере');
+        }
+
+        // Запрашиваем разрешения на камеру и микрофон
+        showNotification('Запрашиваем доступ к камере и микрофону...', 'info');
+        
         localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+            },
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
         });
         
         localVideo.srcObject = localStream;
         
         // Подключение к серверу
-        socket = io();
+        socket = io({
+            transports: ['websocket', 'polling'],
+            timeout: 20000,
+            forceNew: true
+        });
+        
+        // Обработка ошибок подключения
+        socket.on('connect_error', (error) => {
+            console.error('Ошибка подключения к серверу:', error);
+            showNotification('Ошибка подключения к серверу. Проверьте интернет-соединение.', 'error');
+        });
+        
+        socket.on('disconnect', (reason) => {
+            console.log('Отключение от сервера:', reason);
+            if (reason === 'io server disconnect') {
+                showNotification('Соединение разорвано сервером', 'error');
+            }
+        });
+        
+        socket.on('connect', () => {
+            console.log('Подключено к серверу');
+            showNotification('Подключено к серверу', 'success');
+        });
         
         // Присоединение к комнате
         socket.emit('join-room', roomId);
@@ -54,7 +101,19 @@ async function init() {
         
     } catch (error) {
         console.error('Ошибка инициализации:', error);
-        showNotification('Ошибка доступа к камере/микрофону', 'error');
+        
+        if (error.name === 'NotAllowedError') {
+            showNotification('Доступ к камере/микрофону запрещен. Разрешите доступ и обновите страницу.', 'error');
+        } else if (error.name === 'NotFoundError') {
+            showNotification('Камера или микрофон не найдены', 'error');
+        } else if (error.name === 'NotReadableError') {
+            showNotification('Камера или микрофон уже используются другим приложением', 'error');
+        } else {
+            showNotification('Ошибка доступа к камере/микрофону: ' + error.message, 'error');
+        }
+        
+        // Показываем кнопку для повторной попытки
+        showRetryButton();
     }
 }
 
@@ -327,20 +386,71 @@ function endCall() {
 // Обновление списка участников
 function updateParticipantList() {
     const count = Object.keys(peers).length + 1; // +1 для текущего пользователя
-    participantCount.textContent = count;
+    if (participantCount) {
+        participantCount.textContent = count;
+    }
 }
 
 // Показ уведомлений
 function showNotification(message, type = 'success') {
     const notification = document.getElementById('notification');
-    notification.textContent = message;
-    notification.className = `notification ${type}`;
-    notification.classList.remove('hidden');
-    
-    setTimeout(() => {
-        notification.classList.add('hidden');
-    }, 3000);
+    if (notification) {
+        notification.textContent = message;
+        notification.className = `notification ${type}`;
+        notification.classList.remove('hidden');
+        
+        // Автоматически скрываем уведомление через 5 секунд для ошибок, 3 для остальных
+        const timeout = type === 'error' ? 8000 : 3000;
+        setTimeout(() => {
+            notification.classList.add('hidden');
+        }, timeout);
+    }
 }
 
-// Запуск приложения
-init();
+// Показ кнопки повторной попытки
+function showRetryButton() {
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = '🔄 Повторить запрос доступа';
+    retryBtn.className = 'control-btn retry-btn';
+    retryBtn.style.position = 'fixed';
+    retryBtn.style.top = '50%';
+    retryBtn.style.left = '50%';
+    retryBtn.style.transform = 'translate(-50%, -50%)';
+    retryBtn.style.zIndex = '1001';
+    retryBtn.style.padding = '15px 30px';
+    retryBtn.style.fontSize = '16px';
+    retryBtn.style.borderRadius = '8px';
+    retryBtn.style.background = '#667eea';
+    retryBtn.style.color = 'white';
+    retryBtn.style.border = 'none';
+    retryBtn.style.cursor = 'pointer';
+    
+    retryBtn.addEventListener('click', () => {
+        retryBtn.remove();
+        init();
+    });
+    
+    document.body.appendChild(retryBtn);
+}
+
+// Запуск приложения при загрузке DOM
+document.addEventListener('DOMContentLoaded', () => {
+    // Инициализируем DOM элементы
+    initDOMElements();
+    
+    // Получение ID комнаты из URL
+    roomId = window.location.pathname.split('/call/')[1];
+    if (currentRoomIdSpan) {
+        currentRoomIdSpan.textContent = roomId;
+    }
+
+    // Проверяем наличие всех необходимых элементов
+    if (!localVideo || !remoteVideos || !toggleVideoBtn || !toggleAudioBtn || !endCallBtn) {
+        console.error('Не найдены необходимые элементы DOM');
+        showNotification('Ошибка загрузки страницы. Обновите страницу.', 'error');
+        return;
+    }
+
+    // Запускаем инициализацию
+    init();
+});
